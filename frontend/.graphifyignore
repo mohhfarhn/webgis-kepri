@@ -1,0 +1,2 @@
+# graphify: exclude static SVG icons (no meaningful graph edges)
+public/*.svg

@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       Int    @id @default(autoincrement())
+  name     String
+  email    String @unique
+  password String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum Category {
+  BANGUNAN
+  SITUS
+  STRUKTUR
+  KAWASAN
+  BENDA
+}
+
+enum StatusCagar {
+  DITETAPKAN
+  DIDAFTARKAN
+  USULAN
+}
+
+enum TingkatCagar {
+  NASIONAL
+  PROVINSI
+  KABUPATEN
+}
+
+model CagarBudaya {
+  id Int @id @default(autoincrement())
+
+  // Informasi utama
+  nama      String
+  slug      String @unique
+  deskripsi String
+
+  // Lokasi
+  kabupaten String
+  kecamatan String?
+  alamat    String?
+
+  latitude  Float
+  longitude Float
+
+  // Klasifikasi
+  kategori Category
+  status   StatusCagar
+  tingkat  TingkatCagar?
+
+  // Tahun Penetapan
+  tahun Int?
+
+  // Media
+  thumbnail String?
+
+  // Informasi Tambahan
+  nomorSK    String?
+  sumber     String?
+  googleMaps String?
+
+  // Metadata
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  gallery   Gallery[]
+  @@index([kabupaten])
+  @@index([kategori])
+  @@index([status])
+}
+
+model Gallery {
+  id Int @id @default(autoincrement())
+
+  image String
+
+  caption String?
+
+  urutan Int @default(0)
+
+  cagarId Int
+
+  cagar CagarBudaya @relation(fields: [cagarId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([cagarId])
+}

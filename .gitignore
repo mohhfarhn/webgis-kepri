@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+/dist/
+backend/dist/
+/build/
+/out/
+/.next/
+
+# Prisma generated client (dibuat ulang via `prisma generate`)
+backend/src/generated/prisma/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Environment / secrets (jangan di-commit)
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Misc
+*.tsbuildinfo
