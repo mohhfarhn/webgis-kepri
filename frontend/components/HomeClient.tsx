@@ -47,7 +47,7 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
   const appliedDeepLinkRef = useRef<string | null>(null);
   // Kunci JSON situs terakhir yang diterapkan — dipakai untuk deteksi perubahan data
   const appliedSitesKeyRef = useRef<string | null>(null);
-  const [allSites, setAllSites] = useState<Site[]>(fallbackSites);
+  const [allSites, setAllSites] = useState<Site[]>([]);
   const [dataSource, setDataSource] = useState<'api' | 'fallback' | 'loading'>('loading');
   const [dataError, setDataError] = useState<string | null>(null);
   const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);

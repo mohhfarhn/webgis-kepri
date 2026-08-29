@@ -37,3 +37,5 @@ Thumbs.db
 
 # Knowledge graph artifacts (lokal, bukan kode produksi)
 graphify-out/
+
+.vercel
