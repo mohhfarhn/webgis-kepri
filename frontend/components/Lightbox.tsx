@@ -121,6 +121,7 @@ export default function Lightbox({ items, index, onClose, onNavigate }: Lightbox
   const isOpen = index !== null && items.length > 0;
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const touchStartX = useRef<number | null>(null);
+  const swipeSuppressClick = useRef(false);
 
   const go = useCallback(
     (delta: number) => {
@@ -167,14 +168,24 @@ export default function Lightbox({ items, index, onClose, onNavigate }: Lightbox
       aria-modal="true"
       aria-label="Galeri foto"
       style={overlayStyle}
-      onClick={onClose}
+      onClick={(e) => {
+        if (swipeSuppressClick.current) {
+          swipeSuppressClick.current = false;
+          e.stopPropagation();
+          return;
+        }
+        onClose();
+      }}
       onTouchStart={(e) => {
         touchStartX.current = e.touches[0]?.clientX ?? null;
       }}
       onTouchEnd={(e) => {
         if (touchStartX.current === null) return;
         const dx = (e.changedTouches[0]?.clientX ?? 0) - touchStartX.current;
-        if (Math.abs(dx) > 48) go(dx < 0 ? 1 : -1);
+        if (Math.abs(dx) > 48) {
+          swipeSuppressClick.current = true;
+          go(dx < 0 ? 1 : -1);
+        }
         touchStartX.current = null;
       }}
     >
@@ -189,7 +200,7 @@ export default function Lightbox({ items, index, onClose, onNavigate }: Lightbox
         ✕
       </button>
 
-      <figure className="lightbox-figure" style={figureStyle} onClick={(e) => e.stopPropagation()}>
+      <figure className="lightbox-figure" style={figureStyle}>
         <div style={stageStyle}>
           <SmartImage
             key={active.src}
