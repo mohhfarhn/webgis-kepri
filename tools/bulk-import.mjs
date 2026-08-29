@@ -66,6 +66,10 @@ Opsi:
   --password <pass>   Password admin (default: admin123)
   --delay <ms>        Jeda antar request (default: 200)
   --delimiter <char>  Paksa pemisah kolom (default: deteksi otomatis)
+  --no-skip           JANGAN lewati situs yang slug-nya sudah ada (default: lewati)
+
+Situs yang slug-nya sudah ada di database otomatis DILEWATI, sehingga
+mengimpor ulang file yang sama tidak akan menghasilkan duplikat.
   --limit <n>         Hanya impor n baris pertama (untuk uji coba)
   --dry-run           Parsing & validasi saja, tanpa mengunggah
   --help              Bantuan ini
@@ -216,7 +220,7 @@ if (args.length === 0 || args.includes("--help")) {
   process.exit(args.includes("--help") ? 0 : 1);
 }
 
-const opts = { base: API, email: "admin@webgis.id", password: "admin123", delay: 200 };
+const opts = { base: API, email: "admin@webgis.id", password: "admin123", delay: 200, skipExisting: true };
 let filePath = null;
 
 for (let i = 0; i < args.length; i++) {
@@ -227,6 +231,7 @@ for (let i = 0; i < args.length; i++) {
   else if (a === "--password") opts.password = next();
   else if (a === "--delay") opts.delay = Number(next()) || 0;
   else if (a === "--delimiter") opts.delimiter = next();
+  else if (a === "--no-skip") opts.skipExisting = false;
   else if (a === "--limit") opts.limit = Number(next());
   else if (a === "--dry-run") opts.dryRun = true;
   else filePath = a;
@@ -376,12 +381,32 @@ async function main() {
   }
 
   const headers = { Authorization: `Bearer ${token}` };
+
+  let existingSlugs = new Set();
+  if (opts.skipExisting) {
+    try {
+      const listRes = await fetch(`${opts.base}/cagar-budaya`);
+      const listData = await listRes.json().catch(() => ({}));
+      existingSlugs = new Set((listData.data ?? []).map((s) => s.slug).filter(Boolean));
+      console.log(`Skip-duplikat aktif: ${existingSlugs.size} slug sudah ada di DB.`);
+    } catch {
+      console.log("Tidak dapat mengambil daftar slug, lanjut tanpa skip-duplikat.");
+      existingSlugs = new Set();
+    }
+  }
+
   let success = 0;
   let failed = 0;
+  let skipped = 0;
 
   for (const r of records) {
     if (r.errors.length > 0) {
       failed++;
+      continue;
+    }
+    if (opts.skipExisting && existingSlugs.has(r.slug)) {
+      skipped++;
+      console.log(`– [${r.row}] ${r.slug} — sudah ada, dilewati`);
       continue;
     }
     try {
@@ -440,6 +465,7 @@ async function main() {
       }
 
       success++;
+      existingSlugs.add(r.slug);
       console.log(
         `✓ [${r.row}] ${r.slug} — ${r.thumbnailPaths.length > 0 ? `thumb + ${r.galleryPaths.length} foto` : `${r.galleryPaths.length} foto`}`
       );
@@ -450,7 +476,8 @@ async function main() {
     await sleep(opts.delay);
   }
 
-  console.log(`\nSelesai: ${success} berhasil, ${failed} gagal.`);
+  const summary = `\nSelesai: ${success} berhasil, ${failed} gagal${skipped ? `, ${skipped} dilewati (sudah ada)` : ""}.`;
+  console.log(summary);
   process.exit(failed > 0 ? 1 : 0);
 }
 
