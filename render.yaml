@@ -1,0 +1,35 @@
+# ============================================================
+# render.yaml — Konfigurasi deploy otomatis WebGIS Kepri (backend)
+# Dipakai oleh Render (render.com) lewat "Blueprint" dari GitHub.
+# Backend Express ada di subfolder `backend/`.
+# ============================================================
+
+services:
+  - type: web
+    name: webgis-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm ci && npx prisma generate && npx prisma migrate deploy && npm run build
+    startCommand: node dist/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ALLOWED_ORIGIN
+        value: https://webgis-kepri.vercel.app
+      - key: STORAGE_DRIVER
+        value: local
+      # Aktifkan storage Supabase untuk foto permanen (opsional):
+      # - key: SUPABASE_URL
+      #   sync: false
+      # - key: SUPABASE_SERVICE_ROLE_KEY
+      #   sync: false
+      # - key: SUPABASE_BUCKET
+      #   value: uploads
