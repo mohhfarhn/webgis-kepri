@@ -619,27 +619,6 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
           }}>
             📊 Statistik
           </Link>
-          <div style={{
-            fontSize: '11px',
-            color: dataSource === 'api' 
-              ? (isLight ? '#15803D' : '#4ADE80') 
-              : dataSource === 'loading' 
-                ? textColorSecondary 
-                : (isLight ? '#B45309' : '#F59E0B'),
-            background: dataSource === 'api' 
-              ? (isLight ? 'rgba(22, 163, 74, 0.1)' : 'rgba(74, 222, 128, 0.1)') 
-              : dataSource === 'loading' 
-                ? (isLight ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)') 
-                : (isLight ? 'rgba(217, 119, 6, 0.1)' : 'rgba(245, 158, 11, 0.1)'),
-            border: `1px solid ${dataSource === 'api' 
-              ? (isLight ? 'rgba(22, 163, 74, 0.25)' : 'rgba(74, 222, 128, 0.2)') 
-              : dataSource === 'loading' 
-                ? borderColor 
-                : (isLight ? 'rgba(217, 119, 6, 0.25)' : 'rgba(245, 158, 11, 0.2)')}`,
-            padding: '4px 12px', borderRadius: '100px', fontWeight: 700,
-          }}>
-            {dataSource === 'loading' ? 'Memuat...' : dataSource === 'api' ? 'Data API' : 'Data Contoh'}
-          </div>
           {radiusMode && (
             <div style={{
               fontSize: '11px', color: isLight ? '#9A771C' : '#E5C158', background: goldBgSoft,
