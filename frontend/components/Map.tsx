@@ -392,6 +392,12 @@ export default function Map({
     const site = sites.find((s) => s.id === selectedId);
     if (!site) return;
 
+    // Mobile: Bottom Sheet & panel detail menutupi peta di area bawah. Popup dan
+    // label permanen tidak mungkin tampil di atasnya (pane Leaflet terjebak dalam
+    // stacking context .leaflet-map-pane yang bertransform), jadi di mobile keduanya
+    // disembunyikan saat panel tiba — informasi judul & detail sudah ada di sheet.
+    const mobile = map.getSize().x <= 768;
+
     let cancelled = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
     // Cegah performMove dijalankan dua kali untuk seleksi yang sama
@@ -401,7 +407,7 @@ export default function Map({
     // Tampilkan label permanen berisi judul cagar budaya di samping marker.
     const showSiteLabel = (m: L.Marker, id: string) => {
       const site = sites.find((s) => s.id === id);
-      if (!site || m.getTooltip()?.isOpen()) return;
+      if (mobile || !site || m.getTooltip()?.isOpen()) return;
       const name = `<span class="site-label-name${site.name.trim().split(/\s+/).length > 5 ? ' site-label-2lines' : ''}">${site.name.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</span>`;
       m.bindTooltip(name, {
         permanent: true,
@@ -484,6 +490,15 @@ export default function Map({
         const applyAfter = () => {
           if (cancelled) return;
           applySelectedMarkerClass();
+          // Mobile: tutup popup tersisa agar tidak terpotong/tampak "di balik"
+          // sheet & panel detail yang dislide ke atas bersamaan panel tiba.
+          if (mobile) {
+            map.eachLayer((layer: L.Layer) => {
+              if (layer instanceof L.Marker && layer.isPopupOpen()) {
+                layer.closePopup();
+              }
+            });
+          }
           onArriveRef.current?.();
         };
         timers.push(setTimeout(applyAfter, currentZoom < 18 ? 1050 : 650));
