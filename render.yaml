@@ -25,11 +25,12 @@ services:
       - key: ALLOWED_ORIGIN
         value: https://webgis-kepri.vercel.app
       - key: STORAGE_DRIVER
-        value: local
-      # Aktifkan storage Supabase untuk foto permanen (opsional):
-      # - key: SUPABASE_URL
-      #   sync: false
-      # - key: SUPABASE_SERVICE_ROLE_KEY
-      #   sync: false
-      # - key: SUPABASE_BUCKET
-      #   value: uploads
+        value: supabase
+      # Supabase Storage dipakai sebagai penyimpanan foto permanen (backend kode
+      # storage.service.ts sudah mendukung). Buat bucket PUBLIC bernama "uploads".
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: uploads
