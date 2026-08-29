@@ -28,7 +28,7 @@ export default function AdminLoginPage() {
 
   return (
     <div style={{
-      minHeight: '100vh', background: '#0B0F19',
+      minHeight: 'var(--full-height)', background: '#0B0F19',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: '20px',
     }}>

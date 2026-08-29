@@ -161,7 +161,7 @@ export default function StatistikPage() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: pageBg, color: textSecondary, fontSize: 14 }}>
+      <div style={{ minHeight: 'var(--full-height)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: pageBg, color: textSecondary, fontSize: 14 }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTopColor: '#D4AF37', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
           Memuat data statistik...
@@ -173,7 +173,7 @@ export default function StatistikPage() {
 
   if (error) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: pageBg, color: textSecondary, fontSize: 14, padding: '0 24px' }}>
+      <div style={{ minHeight: 'var(--full-height)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: pageBg, color: textSecondary, fontSize: 14, padding: '0 24px' }}>
         <div style={{ textAlign: 'center', maxWidth: 420 }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: textPrimary, marginBottom: 8 }}>Data tidak dapat dimuat</div>
@@ -190,7 +190,7 @@ export default function StatistikPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: pageBg, overflowY: 'auto', overflowX: 'hidden' }}>
+    <div style={{ minHeight: 'var(--full-height)', background: pageBg, overflowY: 'auto', overflowX: 'hidden' }}>
       {/* Header */}
       <header style={{
         position: 'sticky', top: 0, zIndex: 100,

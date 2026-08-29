@@ -31,7 +31,7 @@ interface SitesResult {
 
 function HomeLoading() {
   return (
-    <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+    <div style={{ width: '100vw', height: 'var(--full-height)', position: 'relative' }}>
       <PremiumLoading />
     </div>
   );
@@ -581,7 +581,7 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
   );
 
   return (
-    <main id="main-content" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: headerBg }}>
+    <main id="main-content" style={{ display: 'flex', flexDirection: 'column', height: 'var(--full-height)', overflow: 'hidden', background: headerBg }}>
 
       {/* Header */}
       <header style={{
@@ -767,7 +767,7 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
           <aside
             style={{
               position: 'absolute', bottom: 0, left: 0, right: 0,
-              width: '100%', height: '72vh',
+              width: '100%', height: 'var(--sheet-height)',
               background: sidebarBg,
               display: 'flex', flexDirection: 'column', overflow: 'hidden',
               borderTop: `1.5px solid ${headerBorder}`,

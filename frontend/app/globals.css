@@ -33,6 +33,29 @@
   --card-hover-shadow: 0 10px 24px rgba(184, 147, 36, 0.14), 0 4px 14px rgba(15, 23, 42, 0.08);
 }
 
+/* Tinggi layar penuh yang benar saat browser (mis. Brave mobile) memakai
+   toolbar/URL-bar: 100vh ATAU 100dvh (dynamic) — yang didukung browser. */
+:root {
+  --full-height: 100vh;
+  --sheet-height: 75vh;
+  --modal-height: 76vh;
+}
+@supports (height: 100dvh) {
+  :root {
+    --full-height: 100dvh;
+  }
+}
+@supports (height: 75dvh) {
+  :root {
+    --sheet-height: 75dvh;
+  }
+}
+@supports (height: 76dvh) {
+  :root {
+    --modal-height: 76dvh;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -745,7 +768,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   left: 0;
   right: 0;
   width: 100%;
-  height: 75vh;
+  height: var(--sheet-height);
   z-index: 1200;
   display: flex;
   flex-direction: column;

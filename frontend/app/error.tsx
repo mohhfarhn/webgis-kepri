@@ -18,7 +18,7 @@ export default function Error({
     <main
       id="main-content"
       style={{
-        height: "100vh",
+        height: "var(--full-height)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",

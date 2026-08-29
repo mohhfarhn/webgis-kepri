@@ -18,7 +18,7 @@ export default function AdminError({
     <main
       id="main-content"
       style={{
-        minHeight: "100vh",
+        minHeight: "var(--full-height)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",

@@ -77,7 +77,7 @@ export default async function CagarBudayaDetailPage({ params }: DetailPageProps)
       id="main-content"
       className="premium-scroll"
       style={{
-        height: '100vh',
+        height: 'var(--full-height)',
         overflowY: 'auto',
         background: isLight ? '#F8FAFC' : '#0B0F19',
         color: textColorPrimary,

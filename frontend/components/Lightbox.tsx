@@ -86,7 +86,7 @@ const figureStyle: React.CSSProperties = {
 const stageStyle: React.CSSProperties = {
   position: "relative",
   width: "min(92vw, 1200px)",
-  height: "min(76vh, 860px)",
+  height: "min(var(--modal-height), 860px)",
 };
 
 const captionStyle: React.CSSProperties = {

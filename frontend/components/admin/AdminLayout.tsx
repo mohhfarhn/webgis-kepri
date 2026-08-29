@@ -35,7 +35,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (loading) {
     return (
       <div style={{
-        minHeight: '100vh', background: '#0B0F19',
+        minHeight: 'var(--full-height)', background: '#0B0F19',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         color: '#D4AF37', fontSize: '16px', fontWeight: 700,
       }}>
@@ -50,7 +50,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   ];
 
   return (
-    <div className="admin-shell" style={{ display: 'flex', height: '100vh', background: '#0B0F19', color: '#E2E8F0' }}>
+    <div className="admin-shell" style={{ display: 'flex', height: 'var(--full-height)', background: '#0B0F19', color: '#E2E8F0' }}>
       {/* Sidebar */}
       <aside className="admin-sidebar" style={{
         background: '#111625', borderRight: '1px solid rgba(212,175,55,0.15)',

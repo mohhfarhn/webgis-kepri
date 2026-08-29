@@ -3,7 +3,7 @@ export default function Loading() {
   return (
     <main
       style={{
-        height: "100vh",
+        height: "var(--full-height)",
         overflowY: "auto",
         background: "var(--background)",
         color: "var(--foreground)",
