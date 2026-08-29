@@ -34,3 +34,6 @@ Thumbs.db
 
 # Misc
 *.tsbuildinfo
+
+# Knowledge graph artifacts (lokal, bukan kode produksi)
+graphify-out/

@@ -44,6 +44,23 @@ export const kabupatenList = [
   'Anambas',
 ];
 
+// Menormalkan nama kabupaten dari sumber data (API/backend) agar selalu cocok
+// dengan kanonik kabupatenList. Backend bisa mengirim varian seperti "Kota Batam",
+// "Kab. Bintan", "Kabupaten Natuna", atau "Tanjug Pinang" — helper ini memetakan
+// berdasarkan kata kunci ke bentuk kanonik. Mengembalikan string asli bila tak dikenali.
+export function normalizeKab(raw: string): string {
+  const value = raw.trim().toLowerCase();
+  const contains = (key: string) => value.includes(key.toLowerCase());
+  if (contains('tanjungpinang') || contains('tanjung pinang') || contains('tanjug')) return 'Tanjungpinang';
+  if (contains('batam')) return 'Batam';
+  if (contains('bintan')) return 'Bintan';
+  if (contains('karimun')) return 'Karimun';
+  if (contains('lingga')) return 'Lingga';
+  if (contains('natuna')) return 'Natuna';
+  if (contains('anambas') || contains('kepulauan anambas')) return 'Anambas';
+  return raw.trim();
+}
+
 export const sites: Site[] = [
   {
     id: 's1',

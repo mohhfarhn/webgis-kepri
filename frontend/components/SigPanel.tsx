@@ -6,6 +6,11 @@
 import { useState } from 'react';
 import { getThemeColors } from '../lib/theme';
 
+// Batas jangkauan radius (km) — dipakai untuk slider & label tick agar selalu sinkron
+const RADIUS_MIN = 1;
+const RADIUS_MAX = 100;
+const RADIUS_MID = Math.round((RADIUS_MIN + RADIUS_MAX) / 2);
+
 interface SigPanelProps {
   // Radius
   radiusMode: boolean;
@@ -61,6 +66,22 @@ export default function SigPanel({
   };
 
   const maxCount = kabStats.reduce((max, k) => Math.max(max, k.count), 0);
+  const statsTotal = kabStats.reduce((s, k) => s + k.count, 0);
+
+  const statsToggle = () => (
+    <svg
+      width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+      style={{
+        display: 'block', flexShrink: 0,
+        transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+        transform: showStats ? 'rotate(180deg)' : 'none',
+      }}
+      aria-hidden="true"
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
 
   return (
     <div 
@@ -86,6 +107,8 @@ export default function SigPanel({
 
       {/* Tombol Radius */}
       <button
+        type="button"
+        aria-pressed={radiusMode}
         onClick={onToggleRadius}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: '9px',
@@ -147,7 +170,7 @@ export default function SigPanel({
           </div>
           <input
             type="range"
-            min={1} max={100} value={radiusKm}
+            min={RADIUS_MIN} max={RADIUS_MAX} value={radiusKm}
             aria-label="Jangkauan radius pencarian dalam kilometer"
             onChange={(e) => onRadiusChange(Number(e.target.value))}
             style={{ width: '100%' }}
@@ -156,9 +179,9 @@ export default function SigPanel({
             display: 'flex', justifyContent: 'space-between',
             fontSize: '9px', color: textColorSecondary, marginTop: '4px',
           }}>
-            <span>1 km</span>
-            <span>50 km</span>
-            <span>100 km</span>
+            <span>{RADIUS_MIN} km</span>
+            <span>{RADIUS_MID} km</span>
+            <span>{RADIUS_MAX} km</span>
           </div>
           {nearestCount === 0 && (
             <div style={{
@@ -168,7 +191,7 @@ export default function SigPanel({
               border: `1px solid ${isLight ? 'rgba(239, 68, 68, 0.2)' : 'rgba(239, 68, 68, 0.15)'}`,
               fontSize: '11px', textAlign: 'center',
             }}>
-              Tidak ada situs dalam radius {radiusKm} km
+              Tidak ada situs yang cocok dalam radius {radiusKm} km
             </div>
           )}
         </div>
@@ -176,6 +199,8 @@ export default function SigPanel({
 
       {/* Tombol Batas Wilayah */}
       <button
+        type="button"
+        aria-pressed={boundaryMode}
         onClick={onToggleBoundary}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: '9px',
@@ -207,10 +232,13 @@ export default function SigPanel({
         </span>
       </button>
 
-      {/* Statistik per Wilayah (Bisa di-toggle atau selalu aktif jika batas wilayah aktif) */}
+      {/* Statistik per Wilayah — collapsible; bar di bawah berfungsi sebagai filter */}
       {boundaryMode && kabStats.length > 0 && (
         <div style={{ marginTop: '8px' }}>
           <button
+            type="button"
+            aria-expanded={showStats}
+            aria-controls="sig-stats-panel"
             onClick={() => setShowStats((v) => !v)}
             style={{
               width: '100%', padding: '8px 12px', borderRadius: '8px',
@@ -228,17 +256,20 @@ export default function SigPanel({
               e.currentTarget.style.background = isLight ? '#FFFFFF' : 'rgba(255, 255, 255, 0.03)';
             }}
           >
-            <span>📊 Statistik Wilayah (Klik untuk Filter)</span>
-            <span>{showStats ? '▲' : '▼'}</span>
+            <span>📊 Statistik Wilayah</span>
+            {statsToggle()}
           </button>
 
           {showStats && (
-            <div style={{
-              marginTop: '6px', padding: '12px',
-              background: isLight ? '#FFFFFF' : 'rgba(255, 255, 255, 0.01)', borderRadius: '10px',
-              border: `1px solid ${borderColor}`,
-            }}>
-              {kabStats
+            <div
+              id="sig-stats-panel"
+              style={{
+                marginTop: '6px', padding: '12px',
+                background: isLight ? '#FFFFFF' : 'rgba(255, 255, 255, 0.01)', borderRadius: '10px',
+                border: `1px solid ${borderColor}`,
+              }}
+            >
+              {[...kabStats]
                 .sort((a, b) => b.count - a.count)
                 .map((k) => {
                   const isFiltered = activeKab === k.kab;
@@ -298,7 +329,7 @@ export default function SigPanel({
                         border: `1px solid ${borderColor}`,
                       }}>
                         <div style={{
-                          width: `${(k.count / maxCount) * 100}%`,
+                          width: `${maxCount ? (k.count / maxCount) * 100 : 0}%`,
                           height: '100%', background: k.color, borderRadius: '4px',
                           transition: 'width 0.5s ease',
                         }} />
@@ -321,7 +352,7 @@ export default function SigPanel({
                 fontSize: '11px', fontWeight: 700, color: goldColor,
               }}>
                 <span>Total Cagar Budaya</span>
-                <span>{kabStats.reduce((s, k) => s + k.count, 0)} Situs</span>
+                <span>{statsTotal} Situs</span>
               </div>
             </div>
           )}

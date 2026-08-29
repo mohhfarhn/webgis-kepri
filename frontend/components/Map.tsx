@@ -89,7 +89,6 @@ export default function Map({
   const userCircleRef = useRef<L.Circle | null>(null);
   const boundaryLayersRef = useRef<L.Polygon[]>([]);
   const boundaryLabelsRef = useRef<L.Marker[]>([]);
-  const darkTileRef = useRef<L.TileLayer | null>(null);
   const lightTileRef = useRef<L.TileLayer | null>(null);
   const satelliteTileRef = useRef<L.TileLayer | null>(null);
 
@@ -138,12 +137,6 @@ export default function Map({
     // - Tutup panel → handleCloseDetail di page.tsx
     // - Klik marker lain → marker.on('click') → fly-to useEffect
 
-    const darkTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: 'abcd',
-      maxZoom: 20
-    });
-
     const lightTile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       subdomains: 'abc',
@@ -158,13 +151,10 @@ export default function Map({
       }
     );
 
-    darkTileRef.current = darkTile;
     lightTileRef.current = lightTile;
     satelliteTileRef.current = satelliteTile;
 
-    if (theme === 'dark') {
-      darkTile.addTo(map);
-    } else if (theme === 'satellite') {
+    if (theme === 'satellite') {
       satelliteTile.addTo(map);
     } else {
       lightTile.addTo(map);
@@ -175,7 +165,6 @@ export default function Map({
       map.remove();
       mapRef.current = null;
       markersRef.current = {};
-      darkTileRef.current = null;
       lightTileRef.current = null;
       satelliteTileRef.current = null;
     };
@@ -186,21 +175,14 @@ export default function Map({
   // ── Update tile layer saat tema peta berubah ──
   useEffect(() => {
     const map = mapRef.current;
-    const darkTile = darkTileRef.current;
     const lightTile = lightTileRef.current;
     const satTile = satelliteTileRef.current;
-    if (!map || !darkTile || !lightTile || !satTile) return;
+    if (!map || !lightTile || !satTile) return;
 
-    if (theme === 'dark') {
+    if (theme === 'satellite') {
       if (map.hasLayer(lightTile)) map.removeLayer(lightTile);
-      if (map.hasLayer(satTile)) map.removeLayer(satTile);
-      if (!map.hasLayer(darkTile)) map.addLayer(darkTile);
-    } else if (theme === 'satellite') {
-      if (map.hasLayer(lightTile)) map.removeLayer(lightTile);
-      if (map.hasLayer(darkTile)) map.removeLayer(darkTile);
       if (!map.hasLayer(satTile)) map.addLayer(satTile);
     } else {
-      if (map.hasLayer(darkTile)) map.removeLayer(darkTile);
       if (map.hasLayer(satTile)) map.removeLayer(satTile);
       if (!map.hasLayer(lightTile)) map.addLayer(lightTile);
     }

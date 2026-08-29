@@ -918,20 +918,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
   }
 }
 
-/* Dropdown kabupaten: buka/tutup halus + stagger opsi */.kab-dropdown-menu {
-  opacity: 0;
-  transform: translateY(-6px) scale(0.98);
-  transform-origin: top center;
-  pointer-events: none;
-  transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-}.kab-dropdown-menu.open {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: auto;
-}
-.kab-dropdown-menu.open .kab-dropdown-option {
-  animation: kab-option-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
+/* Animasi masuk opsi dropdown kabupaten (dipakai via inline style di Sidebar) */
 @keyframes kab-option-in {
   from {
     opacity: 0;
@@ -1019,10 +1006,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 /* Premium Site Detail Panel styles */
-.hero-image-zoom:hover {
-  transform: scale(1.04);
-}
-
 .gallery-image {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), filter 0.3s ease;
 }

@@ -1,4 +1,4 @@
-import { Category, Site } from "../data/sites";
+import { Category, Site, normalizeKab } from "../data/sites";
 import { API_BASE_URL, resolveMediaUrl } from "../lib/api";
 
 type ApiCategory = "BANGUNAN" | "SITUS" | "STRUKTUR" | "KAWASAN" | "BENDA";
@@ -62,7 +62,7 @@ function mapCagarBudayaItems(items: CagarBudayaApiItem[]): Site[] {
     id: String(item.id),
     slug: item.slug,
     name: item.nama,
-    kab: item.kabupaten,
+    kab: normalizeKab(item.kabupaten),
     kat: categoryMap[item.kategori],
     lat: item.latitude,
     lng: item.longitude,

@@ -184,6 +184,11 @@ export default function SiteDetailPanel({
   const cat = site ? categories[site.kat] : null;
   const heroImage = site ? (site.thumbnail ?? site.gallery?.[0]?.image) : null;
   const gallery = site?.gallery?.filter((item) => item.image) ?? [];
+  // Saat thumbnail sama dengan foto pertama galeri, foto hero bisa tampil ganda
+  // (hero besar + slide pertama galeri). Buang foto pertama dari galeri dalam hal
+  // ini agar tidak duplikat, dan biarkan penomoran lightbox tetap konsisten.
+  const galleryStart = heroImage && site?.thumbnail && gallery[0]?.image === heroImage ? 1 : 0;
+  const displayGallery = gallery.slice(galleryStart);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
@@ -222,6 +227,17 @@ export default function SiteDetailPanel({
       onClose();
     }
   };
+
+  // Esc juga menutup panel saat fokus berada di luar panel (mis. di peta),
+  // konsisten dengan Lightbox yang mendengarkan di level document.
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isOpen, onClose]);
 
   const { isLight, textColorPrimary, textColorSecondary, goldColor, goldBorder, goldBorderStrong, goldBgSoft } =
     getThemeColors(theme);
@@ -293,21 +309,32 @@ export default function SiteDetailPanel({
           ref={frameRef}
           style={frameStyle}
         >
-      {/* Handle bottom sheet di mobile */}
+      {/* Handle bottom sheet di mobile — bisa ditekan untuk menutup panel */}
       {isMobile && (
         <div
+          role="button"
+          tabIndex={0}
+          aria-label="Tutup panel detail"
+          onClick={onClose}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onClose();
+            }
+          }}
           style={{
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
             paddingTop: "10px",
             paddingBottom: "2px",
+            cursor: "pointer",
           }}
         >
           <div
             style={{
               width: "40px",
-              height: "4px",
+              height: "5px",
               borderRadius: "2px",
               background: isLight ? "rgba(0, 0, 0, 0.15)" : "rgba(255, 255, 255, 0.2)",
             }}
@@ -397,13 +424,12 @@ export default function SiteDetailPanel({
             src={heroImage}
             alt={site.name}
             fill
+            priority
             sizes="(min-width: 900px) 450px, 100vw"
             fallbackBackground={isLight ? "#E2E8F0" : "#111625"}
-            className="hero-image-zoom"
             style={{
               objectFit: "cover",
               background: isLight ? "#E2E8F0" : "#111625",
-              transition: "transform 0.6s cubic-bezier(0.16, 1, 0.3, 1)",
             }}
           />
           {/* Subtle overlay gradients for depth */}
@@ -432,7 +458,7 @@ export default function SiteDetailPanel({
 
       {/* Scrollable Content — di-remount saat ganti situs (key=site.id) agar
           animasi stagger .detail-content > * diputar ulang setiap perpindahan */}
-      <div key={site.id} ref={scrollRef} className="premium-scroll detail-content" style={{ overflowY: "auto", padding: "18px", flex: 1 }}>
+      <div key={site.id} ref={scrollRef} className="premium-scroll detail-content" style={{ overflowY: "auto", padding: "18px 18px calc(18px + env(safe-area-inset-bottom, 0px))", flex: 1 }}>
         {/* Badges */}
         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "16px" }}>
           <span
@@ -509,60 +535,62 @@ export default function SiteDetailPanel({
             <InfoRow label="Koordinat" icon="🌐" value={`${site.lat.toFixed(6)}, ${site.lng.toFixed(6)}`} isLight={isLight} noBorder />
           </dl>
 
-          <div style={{ display: "flex", gap: "10px", marginTop: "18px" }}>
-            {site.googleMaps && (
-              <a
-                href={site.googleMaps}
-                target="_blank"
-                rel="noreferrer"
-                className="premium-btn-primary"
-                style={{
-                  flex: 1,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "8px",
-                  padding: "11px 16px",
-                  borderRadius: "10px",
-                  background: "linear-gradient(135deg, #1B4F4A, #123632)",
-                  color: "#fff",
-                  fontSize: "12px",
-                  fontWeight: 800,
-                  textDecoration: "none",
-                  border: "1px solid rgba(27, 79, 74, 0.4)",
-                  boxShadow: "0 4px 14px rgba(27, 79, 74, 0.25)",
-                  transition: "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
-                }}
-              >
-                🗺️ Google Maps
-              </a>
-            )}
-            {site.slug && (
-              <a
-                href={`/cagar-budaya/${site.slug}`}
-                className="premium-btn-secondary"
-                style={{
-                  flex: 1,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "8px",
-                  padding: "11px 16px",
-                  borderRadius: "10px",
-                  border: `1px solid ${goldBorderStrong}`,
-                  background: goldBgSoft,
-                  color: goldColor,
-                  fontSize: "12px",
-                  fontWeight: 800,
-                  textDecoration: "none",
-                  transition: "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
-                  boxShadow: "0 4px 14px rgba(212,175,55,0.08)",
-                }}
-              >
-                📄 Info Lengkap
-              </a>
-            )}
-          </div>
+          {(site.googleMaps || site.slug) && (
+            <div style={{ display: "flex", gap: "10px", marginTop: "18px" }}>
+              {site.googleMaps && (
+                <a
+                  href={site.googleMaps}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="premium-btn-primary"
+                  style={{
+                    flex: 1,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    padding: "11px 16px",
+                    borderRadius: "10px",
+                    background: "linear-gradient(135deg, #1B4F4A, #123632)",
+                    color: "#fff",
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    textDecoration: "none",
+                    border: "1px solid rgba(27, 79, 74, 0.4)",
+                    boxShadow: "0 4px 14px rgba(27, 79, 74, 0.25)",
+                    transition: "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+                  }}
+                >
+                  🗺️ Google Maps
+                </a>
+              )}
+              {site.slug && (
+                <a
+                  href={`/cagar-budaya/${site.slug}`}
+                  className="premium-btn-secondary"
+                  style={{
+                    flex: 1,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    padding: "11px 16px",
+                    borderRadius: "10px",
+                    border: `1px solid ${goldBorderStrong}`,
+                    background: goldBgSoft,
+                    color: goldColor,
+                    fontSize: "12px",
+                    fontWeight: 800,
+                    textDecoration: "none",
+                    transition: "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+                    boxShadow: "0 4px 14px rgba(212,175,55,0.08)",
+                  }}
+                >
+                  📄 Info Lengkap
+                </a>
+              )}
+            </div>
+          )}
 
           {/* Bagikan tautan situs (deep link ?site=slug) */}
           <ShareButton
@@ -581,24 +609,26 @@ export default function SiteDetailPanel({
           />
         </section>
 
-        {/* Penetapan Card */}
-        <section style={sectionCardStyle}>
-          <h3 style={sectionTitleStyle}>
-            📜 Legalitas & Penetapan
-          </h3>
-          <dl style={{ display: "flex", flexDirection: "column", margin: 0 }}>
-            <InfoRow label="Nomor SK" icon="📜" value={site.nomorSK} isLight={isLight} />
-            <InfoRow label="Sumber Data" icon="🗂️" value={site.sumber} isLight={isLight} noBorder />
-          </dl>
-        </section>
+        {/* Penetapan Card — disembunyikan bila tidak ada data legalitas sama sekali */}
+        {(site.nomorSK || site.sumber) && (
+          <section style={sectionCardStyle}>
+            <h3 style={sectionTitleStyle}>
+              📜 Legalitas & Penetapan
+            </h3>
+            <dl style={{ display: "flex", flexDirection: "column", margin: 0 }}>
+              <InfoRow label="Nomor SK" icon="📜" value={site.nomorSK} isLight={isLight} />
+              <InfoRow label="Sumber Data" icon="🗂️" value={site.sumber} isLight={isLight} noBorder />
+            </dl>
+          </section>
+        )}
 
         {/* Gallery Card */}
-        {gallery.length > 0 && (
+        {displayGallery.length > 0 && (
           <section style={sectionCardStyle}>
             <h3 style={sectionTitleStyle}>🖼️ Galeri Foto</h3>
             <GallerySlider
               key={site.id}
-              items={gallery}
+              items={displayGallery}
               siteName={site.name}
               isLight={isLight}
               textColorSecondary={textColorSecondary}
@@ -611,12 +641,12 @@ export default function SiteDetailPanel({
       )}
 
       {/* Lightbox galeri — portal ke body */}
-      {gallery.length > 0 && site && (
+      {displayGallery.length > 0 && site && (
         <Lightbox
           items={
-            gallery.map((item, index): LightboxItem => ({
+            displayGallery.map((item, index): LightboxItem => ({
               src: item.image as string,
-              alt: item.caption ?? `${site.name} ${index + 1}`,
+              alt: item.caption ?? `${site.name} ${index + 1 + galleryStart}`,
               caption: item.caption,
             }))
           }

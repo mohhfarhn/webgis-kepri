@@ -105,6 +105,49 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
   // Mobile detection & bottom sheet
   const [isMobile, setIsMobile] = useState(false);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+  // Drag-untuk-tutup sheet mobile: tarik handle ke bawah ≥ ambang menutup sheet,
+  // di bawah ambang meluncur naik kembali (snap). Logika gesture memakai ref agar
+  // tidak bergantung pada state render (moves cepat tak ter-drop); state hanya
+  // untuk transform yang dirender.
+  const sheetDragStartRef = useRef<number | null>(null);
+  const sheetDragYRef = useRef(0);
+  const sheetDraggingRef = useRef(false);
+  const [sheetDragY, setSheetDragY] = useState(0);
+  const [isSheetDragging, setIsSheetDragging] = useState(false);
+  // Setelah drag menutup sheet, onClick yang menyusul diabaikan agar tidak langsung
+  // membuka ulang. Di-reset setelah jeda singkat.
+  const sheetSuppressClickRef = useRef(false);
+
+  const handleSheetDragStart = (clientY: number) => {
+    if (!mobileSheetOpen) return;
+    sheetDragStartRef.current = clientY;
+    sheetDragYRef.current = 0;
+    sheetDraggingRef.current = true;
+    setIsSheetDragging(true);
+  };
+  const handleSheetDragMove = (clientY: number) => {
+    if (sheetDragStartRef.current == null || !sheetDraggingRef.current || !mobileSheetOpen) return;
+    const next = Math.max(0, clientY - sheetDragStartRef.current);
+    sheetDragYRef.current = next;
+    setSheetDragY(next);
+  };
+  const handleSheetDragEnd = () => {
+    if (sheetDragStartRef.current == null) return;
+    const dragY = sheetDragYRef.current;
+    const shouldClose = dragY > 120 || dragY > window.innerHeight * 0.25;
+    const wasDrag = dragY > 8;
+    sheetDragStartRef.current = null;
+    sheetDraggingRef.current = false;
+    setIsSheetDragging(false);
+    setSheetDragY(0);
+    if (shouldClose) setMobileSheetOpen(false);
+    // Drag sekecil apa pun (>8px) mengonsumsi click setelahnya agar sheet tidak
+    // tertutup/terbuka ulang oleh klik yang menyusul setelah gesture drag.
+    if (wasDrag) {
+      sheetSuppressClickRef.current = true;
+      window.setTimeout(() => { sheetSuppressClickRef.current = false; }, 300);
+    }
+  };
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 768);
@@ -113,26 +156,13 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  // Sidebar desktop: lipat/buka + ingat preferensi di localStorage
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  useEffect(() => {
-    let saved = false;
-    try {
-      saved = localStorage.getItem('sidebarCollapsed') === '1';
-    } catch {
-      // localStorage tidak tersedia — abaikan
-    }
-    queueMicrotask(() => setSidebarCollapsed(saved));
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('sidebarCollapsed', sidebarCollapsed ? '1' : '0');
-    } catch {
-      // localStorage tidak tersedia — abaikan
-    }
-  }, [sidebarCollapsed]);
+  // Sidebar desktop: lipat/buka — default CLOSED/collapse di setiap load (tanpa persistensi)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  // Ada filter situs aktif (pencarian/kategori/kabupaten) — dipakai untuk menandai tombol toggle
+  const hasActiveSitesFilter =
+    search.trim().length > 0 ||
+    activeKab !== 'all' ||
+    activeKat.size < Object.keys(categories).length;
 
   // Width of the right detail panel (in px) – keep in sync with .detail-panel CSS
   const DETAIL_PANEL_WIDTH = 450;
@@ -389,10 +419,13 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
   }, [router, siteSlugParam]);
 
   const handleToggleRadius = useCallback(() => {
-    if (!radiusMode) setUserLocating(true);
+    // Tampilkan "Mendeteksi lokasi..." hanya bila belum punya lokasi. Jika lokasi
+    // sudah tersimpan, Map langsung menggambar radius tanpa callback onUserLocFound,
+    // sehingga userLocating tidak boleh di-set true (mencegah label nyangkut).
+    if (!radiusMode) setUserLocating(!userLoc);
     setRadiusMode((v) => !v);
     if (radiusMode) setUserLoc(null);
-  }, [radiusMode]);
+  }, [radiusMode, userLoc]);
 
   const handleUserLocFound = useCallback((loc: { lat: number; lng: number }) => {
     setUserLoc(loc);
@@ -410,23 +443,93 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
   // Saat situs tertutup, pertahankan data situs terakhir agar animasi keluar tetap render
   const activeDetailSite = selectedSite ?? detailSite;
 
+  // Tombol toggle sidebar (collapse/open) di sisi kiri map, tengah vertikal.
+  // Satu komponen dipakai bergantian: chevron ke kiri saat terbuka, ke kanan saat tertutup.
+  const sidebarToggle = () => {
+    if (isMobile) return null;
+    const collapsed = sidebarCollapsed;
+    return (
+      <button
+        type="button"
+        onClick={() => setSidebarCollapsed((v) => !v)}
+        aria-label={collapsed ? 'Buka panel daftar cagar budaya' : 'Lipat panel'}
+        title={collapsed ? 'Buka panel daftar' : 'Lipat panel'}
+        style={{
+          position: 'absolute', top: '50%', left: '10px', transform: 'translateY(-50%)', zIndex: 1000,
+          width: '36px', height: '36px', borderRadius: '10px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: `1px solid ${goldBorder}`,
+          background: isLight ? '#FFFFFF' : '#111827',
+          color: goldColor, cursor: 'pointer',
+          boxShadow: isLight ? '0 4px 18px rgba(0,0,0,0.18)' : '0 4px 18px rgba(0,0,0,0.6)',
+          transition: 'background 0.2s, box-shadow 0.2s, transform 0.2s',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = goldBgSoft;
+          e.currentTarget.style.boxShadow = `0 0 0 3px ${goldColor}22`;
+          e.currentTarget.style.transition = 'background 0.2s, box-shadow 0.2s';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = isLight ? '#FFFFFF' : '#111827';
+          e.currentTarget.style.boxShadow = isLight ? '0 4px 18px rgba(0,0,0,0.18)' : '0 4px 18px rgba(0,0,0,0.6)';
+          e.currentTarget.style.transition = 'background 0.2s, box-shadow 0.2s, transform 0.2s';
+        }}
+      >
+        <svg
+          width="18" height="18" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+          style={{ display: 'block' }}
+        >
+          <path d={collapsed ? 'M9 18l6-6-6-6' : 'M15 18l-6-6 6-6'} />
+        </svg>
+        {hasActiveSitesFilter && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute', top: '7px', right: '7px',
+              width: '7px', height: '7px', borderRadius: '50%',
+              background: goldColor,
+              boxShadow: `0 0 0 2px ${isLight ? '#FFFFFF' : '#111827'}, 0 0 6px ${goldColor}aa`,
+            }}
+          />
+        )}
+      </button>
+    );
+  };
+
   // Sidebar content (shared between desktop & mobile)
   const sidebarContent = (
     <>
-      {/* Handle bar - hanya mobile */}
+      {/* Handle bar - hanya mobile — dorong ke bawah untuk menutup sheet */}
       {isMobile && (
         <div
           role="button"
           tabIndex={0}
           aria-label={mobileSheetOpen ? 'Tutup menu situs' : 'Buka menu situs'}
-          onClick={() => setMobileSheetOpen((v) => !v)}
+          onClick={() => {
+            if (sheetSuppressClickRef.current) {
+              sheetSuppressClickRef.current = false;
+              return;
+            }
+            setMobileSheetOpen((v) => !v);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               setMobileSheetOpen((v) => !v);
             }
           }}
-          style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 6px', cursor: 'pointer', flexShrink: 0 }}
+          onPointerDown={(e) => {
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* capture opsional */ }
+            handleSheetDragStart(e.clientY);
+          }}
+          onPointerMove={(e) => handleSheetDragMove(e.clientY)}
+          onPointerUp={handleSheetDragEnd}
+          onPointerCancel={handleSheetDragEnd}
+          style={{
+            display: 'flex', justifyContent: 'center', padding: '10px 0 6px',
+            cursor: 'pointer', flexShrink: 0, touchAction: 'none',
+          }}
         >
           <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(212,175,55,0.4)' }} />
         </div>
@@ -437,7 +540,7 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
         display: 'flex',
         background: tabSwitcherBg,
         borderBottom: `1px solid ${borderColor}`,
-        padding: '8px 12px', gap: '8px', flexShrink: 0,
+        padding: '10px 14px', gap: '8px', flexShrink: 0,
       }}>
         {(['situs', 'sig'] as const).map((tab) => (
           <button
@@ -445,15 +548,15 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
             onClick={() => setActiveSidebarTab(tab)}
             aria-pressed={activeSidebarTab === tab}
             style={{
-              flex: 1, padding: '8px 12px', borderRadius: '8px', cursor: 'pointer',
-              fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center',
+              flex: 1, padding: '9px 12px', borderRadius: '9px', cursor: 'pointer',
+              fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center',
               justifyContent: 'center', gap: '6px', fontFamily: 'inherit', transition: 'all 0.2s',
               background: activeSidebarTab === tab ? goldBgSoft : 'transparent',
               color: activeSidebarTab === tab ? goldColor : textColorSecondary,
               border: activeSidebarTab === tab ? `1px solid ${goldBorder}` : '1px solid transparent',
             }}
           >
-            {tab === 'situs' ? 'Daftar & Filter' : 'Analisis SIG'}
+            {tab === 'situs' ? 'Daftar' : 'Analisis SIG'}
           </button>
         ))}
       </div>
@@ -569,94 +672,41 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
       {/* Layout */}
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
 
-        {/* DESKTOP: sidebar kiri — bisa dilipat/dibuka dengan animasi */}
+        {/* DESKTOP: sidebar kiri — panel daftar yang bisa dibuka/ditutup (0 ↔ 360px) */}
         {!isMobile && (
           <aside style={{
-            width: sidebarCollapsed ? '46px' : '360px', flexShrink: 0,
+            width: sidebarCollapsed ? '0px' : '360px', flexShrink: 0,
             background: sidebarBg, display: 'flex', flexDirection: 'column', overflow: 'hidden',
-            borderRight: `1px solid ${borderColor}`,
+            borderRight: sidebarCollapsed ? 'none' : `1px solid ${borderColor}`,
             transition: 'width 0.35s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s, border-color 0.2s',
           }}>
-            {/* Header strip — tombol toggle selalu terlihat */}
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              padding: '8px', borderBottom: `1px solid ${borderColor}`, flexShrink: 0,
-              minWidth: '360px',
-            }}>
-              <button
-                type="button"
-                onClick={() => setSidebarCollapsed((v) => !v)}
-                aria-label={sidebarCollapsed ? 'Buka sidebar' : 'Lipat sidebar'}
-                title={sidebarCollapsed ? 'Buka sidebar' : 'Lipat sidebar'}
-                style={{
-                  width: '30px', height: '30px', borderRadius: '8px', flexShrink: 0,
-                  border: `1px solid ${borderColor}`,
-                  background: 'transparent', color: textColorSecondary, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transition: 'background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.2s',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = isLight ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)';
-                  e.currentTarget.style.color = goldColor;
-                  e.currentTarget.style.boxShadow = `0 0 0 3px ${goldColor}22`;
-                  e.currentTarget.style.transform = 'scale(1.06)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = textColorSecondary;
-                  e.currentTarget.style.boxShadow = 'none';
-                  e.currentTarget.style.transform = 'scale(1)';
-                }}
-              >
-                <svg
-                  width="16" height="16" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                  style={{
-                    display: 'block',
-                    transform: sidebarCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
-                  }}
-                >
-                  <path d="M15 18l-6-6 6-6" />
-                </svg>
-              </button>
-              <span style={{
-                fontSize: '11px', fontWeight: 800, color: goldColor,
-                textTransform: 'uppercase', letterSpacing: '0.12em', whiteSpace: 'nowrap',
-                opacity: sidebarCollapsed ? 0 : 1,
-                transition: 'opacity 0.25s',
+            {!sidebarCollapsed && (
+              /* Konten sidebar */
+              <div style={{
+                flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                minWidth: '100%',
               }}>
-                Daftar & Analisis
-              </span>
-            </div>
-
-            {/* Konten sidebar — memudar & bergeser saat dilipat */}
-            <div style={{
-              flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
-              minWidth: '100%',
-              opacity: sidebarCollapsed ? 0 : 1,
-              transform: sidebarCollapsed ? 'translateX(-24px)' : 'translateX(0)',
-              pointerEvents: sidebarCollapsed ? 'none' : 'auto',
-              transition: 'opacity 0.25s, transform 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
-            }}>
-              {sidebarContent}
-            </div>
+                {sidebarContent}
+              </div>
+            )}
           </aside>
         )}
 
         {/* Peta - fullscreen di mobile, flex:1 di desktop */}
         <div className="map-viewport">
-        <Map          sites={filteredSites} selectedId={selectedId} onSelectSite={handleSelectSite}
-          radiusMode={radiusMode} radiusKm={radiusKm} userLoc={userLoc}
-          onUserLocFound={handleUserLocFound} boundaryMode={boundaryMode}
-          theme={theme} onThemeChange={setTheme}
-          detailPanelWidth={DETAIL_PANEL_WIDTH}
-          flyNonce={flyNonce}
-          sidebarCollapsed={sidebarCollapsed}
-          onArrive={handleArrive}
-        />
+          <Map
+            sites={filteredSites} selectedId={selectedId} onSelectSite={handleSelectSite}
+            radiusMode={radiusMode} radiusKm={radiusKm} userLoc={userLoc}
+            onUserLocFound={handleUserLocFound} boundaryMode={boundaryMode}
+            theme={theme} onThemeChange={setTheme}
+            detailPanelWidth={DETAIL_PANEL_WIDTH}
+            flyNonce={flyNonce}
+            sidebarCollapsed={sidebarCollapsed}
+            onArrive={handleArrive}
+          />
 
-          {/* Backdrop di mobile */}
+          {sidebarToggle()}
+
           {isMobile && (
             <div
               onClick={handleCloseDetail}
@@ -701,14 +751,15 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
               }}
             >
               {mobileSheetOpen ? (
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
               ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }} aria-hidden="true">
+                  <line x1="4" y1="6" x2="20" y2="6"></line>
+                  <line x1="4" y1="12" x2="20" y2="12"></line>
+                  <line x1="4" y1="18" x2="20" y2="18"></line>
                 </svg>
               )}
             </button>
@@ -729,18 +780,28 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
 
         {/* MOBILE: Bottom Sheet */}
         {isMobile && (
-          <aside style={{
-            position: 'absolute', bottom: 0, left: 0, right: 0,
-            width: '100%', height: '72vh',
-            background: sidebarBg,
-            display: 'flex', flexDirection: 'column', overflow: 'hidden',
-            borderTop: `1.5px solid ${headerBorder}`,
-            borderRadius: '20px 20px 0 0',
-            boxShadow: isLight ? '0 -8px 40px rgba(0,0,0,0.08)' : '0 -8px 40px rgba(0,0,0,0.6)',
-            zIndex: 900,
-            transform: mobileSheetOpen ? 'translateY(0)' : 'translateY(100%)',
-            transition: 'transform 0.35s cubic-bezier(0.32,0.72,0,1), background-color 0.2s',
-          }}>
+          <aside
+            style={{
+              position: 'absolute', bottom: 0, left: 0, right: 0,
+              width: '100%', height: '72vh',
+              background: sidebarBg,
+              display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              borderTop: `1.5px solid ${headerBorder}`,
+              borderRadius: '20px 20px 0 0',
+              paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+              boxShadow: isLight ? '0 -8px 40px rgba(0,0,0,0.08)' : '0 -8px 40px rgba(0,0,0,0.6)',
+              zIndex: 900,
+              transform: mobileSheetOpen
+                ? isSheetDragging
+                  ? `translateY(${sheetDragY}px)`
+                  : 'translateY(0)'
+                : 'translateY(100%)',
+              transition: isSheetDragging
+                ? 'none'
+                : 'transform 0.35s cubic-bezier(0.32,0.72,0,1), background-color 0.2s',
+              touchAction: 'pan-y',
+            }}
+          >
             {sidebarContent}
           </aside>
         )}

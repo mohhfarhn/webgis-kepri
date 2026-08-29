@@ -16,14 +16,6 @@ function SunIcon({ size = 15 }: { size?: number }) {
   );
 }
 
-function MoonIcon({ size = 15 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-    </svg>
-  );
-}
-
 function SatelliteIcon({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -38,21 +30,17 @@ function SatelliteIcon({ size = 15 }: { size?: number }) {
 
 const BASEMAPS: { value: MapTheme; label: string; icon: (size?: number) => React.ReactNode }[] = [
   { value: "light", label: "Terang", icon: (s) => <SunIcon size={s} /> },
-  { value: "dark", label: "Gelap", icon: (s) => <MoonIcon size={s} /> },
   { value: "satellite", label: "Satelit", icon: (s) => <SatelliteIcon size={s} /> },
 ];
 
 export default function BasemapSwitcher({ theme, onThemeChange }: BasemapSwitcherProps) {
-  const isDark = theme === "dark";
   const isSatellite = theme === "satellite";
 
-  const containerBg = isDark
-    ? "rgba(11, 15, 25, 0.85)"
-    : isSatellite
-      ? "rgba(11, 15, 25, 0.7)"
-      : "rgba(255, 255, 255, 0.92)";
+  const containerBg = isSatellite
+    ? "rgba(11, 15, 25, 0.7)"
+    : "rgba(255, 255, 255, 0.92)";
   const containerBorder = "rgba(212, 175, 55, 0.35)";
-  const idleColor = isDark || isSatellite ? "#94A3B8" : "#475569";
+  const idleColor = isSatellite ? "#94A3B8" : "#475569";
 
   return (
     <div
@@ -100,7 +88,7 @@ export default function BasemapSwitcher({ theme, onThemeChange }: BasemapSwitche
             }}
             onMouseEnter={(e) => {
               if (!isActive) {
-                e.currentTarget.style.background = isDark || isSatellite ? "rgba(255,255,255,0.1)" : "rgba(184, 147, 36, 0.1)";
+                e.currentTarget.style.background = isSatellite ? "rgba(255,255,255,0.1)" : "rgba(184, 147, 36, 0.1)";
                 e.currentTarget.style.color = "#D4AF37";
               }
             }}
