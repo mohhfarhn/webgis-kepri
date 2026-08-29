@@ -126,6 +126,18 @@ Lalu **redeploy** Vercel.
 
 ## Update selanjutnya
 ```bash
-cd /var/www/webgis && bash deploy.sh main
+sudo -i bash /var/www/webgis/deploy.sh main
 ```
-(pull + rebuild + restart). Bisa diotomasi via GitHub webhook.
+(pull + rebuild + restart). Otomatis via GitHub Actions: tiap push ke `main`
+(mengubah `backend/**`, `deploy/**`, atau workflow) akan menjalankan deploy.sh
+lewat SSH. Lihat `.github/workflows/deploy.yml`.
+
+### Sekali saja: set GitHub Secrets
+Repo > Settings > Secrets and variables > Actions > New repository secret:
+- `VPS_HOST` — IP publik / domain Oracle
+- `VPS_USER` — user SSH (mis. `ubuntu`)
+- `VPS_PORT` — port SSH (default `22`)
+- `VPS_SSH_KEY` — isi private key PEM (multi-line, tempel baris utuh)
+
+Workflow akan `ssh` lalu `sudo -i bash deploy.sh`. User `VPS_USER` perlu izin
+`sudo` tanpa password (biasanya `ubuntu` di Oracle sudah NOPASSWD).
