@@ -194,6 +194,15 @@ export default function SiteDetailPanel({
   const panelRef = useRef<HTMLElement | null>(null);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  // Drag-untuk-tutup sheet detail (mobile): tarik handle ke bawah ≥ ambang menutup
+  // sheet, di bawah ambang meluncur naik kembali (snap). Logika memakai ref agar
+  // tidak bergantung pada state render; state hanya untuk transform.
+  const dragStartRef = useRef<number | null>(null);
+  const dragYRef = useRef(0);
+  const draggingRef = useRef(false);
+  const suppressCloseClickRef = useRef(false);
+  const [dragY, setDragY] = useState(0);
+  const [isSheetDragging, setIsSheetDragging] = useState(false);
   // Lightbox menyimpan siteId bersama index — otomatis "tertutup" (derivatif)
   // saat berganti situs atau panel ditutup, tanpa perlu efek/reset manual.
   const [lightboxState, setLightboxState] = useState<{ siteId: string; index: number } | null>(null);
@@ -226,6 +235,37 @@ export default function SiteDetailPanel({
       e.stopPropagation();
       onClose();
     }
+  };
+
+  const handleDragStart = (clientY: number) => {
+    if (!isOpen) return;
+    dragStartRef.current = clientY;
+    dragYRef.current = 0;
+    draggingRef.current = true;
+    setIsSheetDragging(true);
+  };
+  const handleDragMove = (clientY: number) => {
+    if (dragStartRef.current == null || !draggingRef.current || !isOpen) return;
+    const next = Math.max(0, clientY - dragStartRef.current);
+    dragYRef.current = next;
+    setDragY(next);
+  };
+  const handleDragEnd = () => {
+    if (dragStartRef.current == null) return;
+    const dy = dragYRef.current;
+    const shouldClose = dy > 120 || dy > window.innerHeight * 0.25;
+    const wasDrag = dy > 8;
+    dragStartRef.current = null;
+    draggingRef.current = false;
+    setIsSheetDragging(false);
+    setDragY(0);
+    // Drag sekecil apa pun (>8px) mengonsumsi click yang menyusul agar sheet
+    // tidak tertutup dua kali (sekali oleh drag, sekali oleh click).
+    if (wasDrag) {
+      suppressCloseClickRef.current = true;
+      window.setTimeout(() => { suppressCloseClickRef.current = false; }, 300);
+    }
+    if (shouldClose) onClose();
   };
 
   // Esc juga menutup panel saat fokus berada di luar panel (mis. di peta),
@@ -301,6 +341,10 @@ export default function SiteDetailPanel({
       tabIndex={-1}
       onKeyDown={handlePanelKeyDown}
       className={panelClassName}
+      style={{
+        transform: isSheetDragging ? `translateY(${dragY}px)` : undefined,
+        transition: isSheetDragging ? "none" : undefined,
+      }}
     >
       {!site && <div style={{ width: "100%", height: "100%" }} />}
 
@@ -309,19 +353,32 @@ export default function SiteDetailPanel({
           ref={frameRef}
           style={frameStyle}
         >
-      {/* Handle bottom sheet di mobile — bisa ditekan untuk menutup panel */}
+      {/* Handle bottom sheet di mobile — tarik ke bawah untuk menutup, cukup tekan untuk menutup */}
       {isMobile && (
         <div
           role="button"
           tabIndex={0}
           aria-label="Tutup panel detail"
-          onClick={onClose}
+          onClick={() => {
+            if (suppressCloseClickRef.current) {
+              suppressCloseClickRef.current = false;
+              return;
+            }
+            onClose();
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               onClose();
             }
           }}
+          onPointerDown={(e) => {
+            try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* capture opsional */ }
+            handleDragStart(e.clientY);
+          }}
+          onPointerMove={(e) => handleDragMove(e.clientY)}
+          onPointerUp={handleDragEnd}
+          onPointerCancel={handleDragEnd}
           style={{
             display: "flex",
             justifyContent: "center",
@@ -329,6 +386,8 @@ export default function SiteDetailPanel({
             paddingTop: "10px",
             paddingBottom: "2px",
             cursor: "pointer",
+            touchAction: "none",
+            flexShrink: 0,
           }}
         >
           <div
