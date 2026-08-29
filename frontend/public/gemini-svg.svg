@@ -1,9 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
-  <!-- Margin Putih Latar Belakang -->
-  <rect width="512" height="512" fill="#ffffff"/>
-
-  <!-- Kotak Biru Gelap (Dark Navy Background) -->
-  <rect x="36" y="36" width="440" height="440" fill="#061d3d"/>
+  <!-- Latar Belakang Lingkaran Biru Gelap (Dark Navy Circular Background) -->
+  <circle cx="256" cy="256" r="240" fill="#061d3d"/>
 
   <!-- Ikon Pin Peta Biru dengan lubang di tengah -->
   <path d="M 256 420 C 370 280 400 230 400 165 A 144 144 0 0 0 112 165 C 112 230 142 280 256 420 Z M 256 270 A 105 105 0 1 1 256 60 A 105 105 0 1 1 256 270 Z" fill="#0c3a66" fill-rule="evenodd"/>
