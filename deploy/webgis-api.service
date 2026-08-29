@@ -1,0 +1,27 @@
+# ============================================================
+# webgis-api.service — systemd unit untuk backend Express
+# Pasang:
+#   cp deploy/webgis-api.service /etc/systemd/system/webgis-api.service
+#   systemctl daemon-reload
+#   systemctl enable --now webgis-api
+# ============================================================
+[Unit]
+Description=WebGIS Kepri Backend API (Express)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=webgis
+WorkingDirectory=/var/www/webgis/backend
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+EnvironmentFile=/var/www/webgis/backend/.env
+
+# Hardening ringan
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
