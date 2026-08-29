@@ -755,6 +755,14 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
 
           {/* Legenda */}
           <MapLegend />
+
+          {/* Overlay loading: tetap tampil sampai data siap, agar peta tidak
+              terlihat kosong tanpa marker saat data API belum termuat. */}
+          {dataSource === 'loading' && (
+            <div style={{ position: 'absolute', inset: 0, zIndex: 1200 }}>
+              <PremiumLoading />
+            </div>
+          )}
         </div>
 
         {/* MOBILE: Bottom Sheet */}
