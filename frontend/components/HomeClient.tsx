@@ -10,7 +10,7 @@ import SigPanel from './SigPanel';
 import SiteDetailPanel from './SiteDetailPanel';
 import PremiumLoading from './PremiumLoading';
 import MapLegend from './map/MapLegend';
-import { sites as fallbackSites, Category, Site, categories } from '../data/sites';
+import { Category, Site, categories } from '../data/sites';
 import { boundaries } from '../data/boundaries';
 import { getCagarBudayaSites } from '../services/cagarBudaya';
 import { haversineDistance } from '../lib/geo';
@@ -25,7 +25,7 @@ const ALL_CATEGORIES = new Set<Category>(['bangunan', 'situs', 'struktur', 'kawa
 
 interface SitesResult {
   sites: Site[];
-  source: 'api' | 'fallback';
+  source: 'api';
   error: string | null;
 }
 
@@ -48,7 +48,7 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
   // Kunci JSON situs terakhir yang diterapkan — dipakai untuk deteksi perubahan data
   const appliedSitesKeyRef = useRef<string | null>(null);
   const [allSites, setAllSites] = useState<Site[]>([]);
-  const [dataSource, setDataSource] = useState<'api' | 'fallback' | 'loading'>('loading');
+  const [dataSource, setDataSource] = useState<'api' | 'loading'>('loading');
   const [dataError, setDataError] = useState<string | null>(null);
   const [deepLinkNotice, setDeepLinkNotice] = useState<string | null>(null);
   const [flyNonce, setFlyNonce] = useState(0);
@@ -170,15 +170,12 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
   const loadSites = useCallback(async (): Promise<SitesResult> => {
     try {
       const sites = await getCagarBudayaSites();
-      if (sites.length > 0) {
-        return { sites, source: 'api', error: null };
-      }
-      return { sites: fallbackSites, source: 'fallback', error: null };
+      return { sites, source: 'api', error: null };
     } catch {
       return {
-        sites: fallbackSites,
-        source: 'fallback',
-        error: 'Backend belum terhubung. Menampilkan data contoh.',
+        sites: [],
+        source: 'api',
+        error: 'Backend belum terhubung. Data tidak dapat dimuat.',
       };
     }
   }, []);
