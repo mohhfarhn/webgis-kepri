@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { sites as fallbackSites, Site, Category } from '../../data/sites';
+import { Site, Category } from '../../data/sites';
 import { getCagarBudayaSites } from '../../services/cagarBudaya';
 import CategoryIcon from '../../components/icons/CategoryIcon';
 import SmartImage from '../../components/SmartImage';
@@ -65,6 +65,7 @@ const TINGKAT_CONFIG: Record<string, { color: string; bgColor: string; icon: str
 export default function StatistikPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [theme] = useState<'dark' | 'light'>(() => {
     if (typeof document !== 'undefined') {
       const match = document.cookie.match(/(?:^|;\s*)theme=([^;]*)/);
@@ -73,12 +74,18 @@ export default function StatistikPage() {
     return 'light';
   });
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
+    setError(null);
+    setLoading(true);
     getCagarBudayaSites()
       .then(setSites)
-      .catch(() => setSites(fallbackSites))
+      .catch(() => setError('Gagal memuat data dari server. Silakan coba lagi.'))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   /* ── Computed Stats ── */
   const stats = useMemo(() => {
@@ -160,6 +167,24 @@ export default function StatistikPage() {
           Memuat data statistik...
         </div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); }}`}</style>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: pageBg, color: textSecondary, fontSize: 14, padding: '0 24px' }}>
+        <div style={{ textAlign: 'center', maxWidth: 420 }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: textPrimary, marginBottom: 8 }}>Data tidak dapat dimuat</div>
+          <div style={{ lineHeight: 1.6, marginBottom: 20 }}>{error}</div>
+          <button type="button" onClick={loadData} style={{
+            padding: '10px 22px', borderRadius: 100, cursor: 'pointer', fontFamily: 'inherit',
+            fontSize: 13, fontWeight: 700, color: goldColor,
+            background: 'rgba(212, 175, 55, 0.1)', border: '1px solid rgba(212, 175, 55, 0.35)',
+            transition: 'all 0.2s',
+          }}>Muat Ulang</button>
+        </div>
       </div>
     );
   }
