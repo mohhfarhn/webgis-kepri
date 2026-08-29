@@ -606,11 +606,9 @@ export default function Sidebar({
 
               {/* Info */}
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                <div style={{
+                <div className="sidebar-site-title" style={{
                   fontSize: '15px', fontWeight: 800, color: textColorPrimary,
-                  marginBottom: '4px', lineHeight: 1.3, overflow: 'hidden',
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                  wordBreak: 'break-word',
+                  marginBottom: '4px', lineHeight: 1.3,
                 }}>
                   <Highlight text={site.name} query={search} />
                 </div>

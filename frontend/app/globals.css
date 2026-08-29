@@ -493,6 +493,16 @@ input[type="range"]::-webkit-slider-thumb:hover {
   word-break: break-word;
 }
 
+/* Judul situs di daftar sidebar — maksimal 2 baris agar tidak terpotong */
+.sidebar-site-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 /* ═══ Lightbox Galeri Foto ═══ */
 .lightbox-overlay {
   animation: lightbox-fade 0.22s ease both;
