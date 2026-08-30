@@ -483,9 +483,13 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 .site-label-2lines {
   white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   font-size: 12px;
   line-height: 1.3;
   max-width: min(340px, calc(100vw - 160px));
+  overflow: hidden;
   overflow-wrap: break-word;
   word-break: break-word;
 }
