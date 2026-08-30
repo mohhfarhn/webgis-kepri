@@ -483,12 +483,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 .site-label-2lines {
   white-space: normal;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  width: max-content;
-  max-width: 180px;
-  overflow: hidden;
+  max-width: 210px;
   overflow-wrap: break-word;
   word-break: break-word;
 }
