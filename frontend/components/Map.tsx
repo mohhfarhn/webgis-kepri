@@ -524,7 +524,7 @@ export default function Map({
       });
     };
 
-  }, [selectedId, sites, detailPanelWidth, flyNonce, sidebarCollapsed]);
+  }, [selectedId, sites, detailPanelWidth, flyNonce]);
 
   // Saat tidak ada situs yang dipilih (panel ditutup / deselect / klik area
   // kosong), bersihkan semua label judul & highlight marker, dan tutup semua
