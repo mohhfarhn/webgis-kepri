@@ -486,7 +486,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .site-label-2lines {
   display: inline-block;
   white-space: normal;
+  width: max-content;
   max-width: 300px;
+  text-align: left;
 }
 
 /* Judul situs di daftar sidebar — maksimal 2 baris agar tidak terpotong */
