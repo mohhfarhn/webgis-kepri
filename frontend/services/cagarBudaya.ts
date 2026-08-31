@@ -1,6 +1,10 @@
 import { Category, Site, normalizeKab } from "../data/sites";
 import { API_BASE_URL, resolveMediaUrl } from "../lib/api";
 
+// Batasi durasi permintaan supaya layar "Memuat Peta" tidak mengambang tanpa batas
+// saat backend tak terjangkau (mis. diuji dari HP: `localhost` menunjuk HP sendiri).
+const REQUEST_TIMEOUT_MS = 8000;
+
 type ApiCategory = "BANGUNAN" | "SITUS" | "STRUKTUR" | "KAWASAN" | "BENDA";
 type ApiStatus = "DITETAPKAN" | "DIDAFTARKAN" | "USULAN";
 type ApiTingkat = "NASIONAL" | "PROVINSI" | "KABUPATEN";
@@ -88,6 +92,7 @@ function mapCagarBudayaItems(items: CagarBudayaApiItem[]): Site[] {
 export async function getCagarBudayaSites(): Promise<Site[]> {
   const response = await fetch(`${API_BASE_URL}/cagar-budaya`, {
     cache: "no-store",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -106,6 +111,7 @@ export async function getCagarBudayaSites(): Promise<Site[]> {
 export async function getCagarBudayaSiteBySlug(slug: string): Promise<Site | null> {
   const response = await fetch(`${API_BASE_URL}/cagar-budaya/${encodeURIComponent(slug)}`, {
     cache: "no-store",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   if (response.status === 404) return null;

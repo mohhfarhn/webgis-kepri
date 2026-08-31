@@ -1,0 +1,11 @@
+# OSRM lokal Kepulauan Riau — jalankan: docker compose up -d --build
+# Build awal: unduh ekstrak Sumatra (~270 MB) → potong bbox Kepri → indeks routing.
+# Router mulai melayani di http://localhost:5001/route/v1
+services:
+  osrm-kepri:
+    build: .
+    image: osrm-kepri:latest
+    container_name: osrm-kepri
+    ports:
+      - "5001:5001"
+    restart: unless-stopped

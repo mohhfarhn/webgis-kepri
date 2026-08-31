@@ -43,6 +43,10 @@ const isLocalHost = remotePatterns.some(
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  allowedDevOrigins: ['192.168.110.239', 'localhost'],
+  turbopack: {
+    root: __dirname,
+  },
   images: {
     remotePatterns,
     dangerouslyAllowLocalIP: isLocalHost,

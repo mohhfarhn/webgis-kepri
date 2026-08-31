@@ -84,8 +84,21 @@ export default function StatistikPage() {
   }, []);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    let ignore = false;
+    (async () => {
+      try {
+        const data = await getCagarBudayaSites();
+        if (!ignore) setSites(data);
+      } catch {
+        if (!ignore) setError('Gagal memuat data dari server. Silakan coba lagi.');
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   /* ── Computed Stats ── */
   const stats = useMemo(() => {

@@ -6,3 +6,10 @@ node_modules
 /generated/prisma
 uploads
 .vercel
+
+# OSRM lokal — artefak bila diekstrak langsung di host (tanpa Docker)
+/osrm/*.osm.pbf
+/osrm/*.osrm*
+
+# Graphify analysis output
+/graphify-out/

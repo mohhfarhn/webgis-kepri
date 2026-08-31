@@ -19,6 +19,7 @@ interface SiteDetailPanelProps {
   onClose: () => void;
   theme: ThemeMode;
   isMobile?: boolean;
+  onRoute?: () => void;
 }
 
 const InfoRow = ({
@@ -180,6 +181,7 @@ export default function SiteDetailPanel({
   onClose,
   theme,
   isMobile = false,
+  onRoute,
 }: SiteDetailPanelProps) {
   const cat = site ? categories[site.kat] : null;
   const heroImage = site ? (site.thumbnail ?? site.gallery?.[0]?.image) : null;
@@ -666,6 +668,31 @@ export default function SiteDetailPanel({
               boxShadow: "0 4px 14px rgba(212,175,55,0.08)",
             }}
           />
+
+          {/* Rute (uji lokal): gambar rute OSRM dari lokasi Anda ke situs ini */}
+          {onRoute && (
+            <button
+              type="button"
+              onClick={onRoute}
+              title="Gambar rute dari lokasi Anda ke situs ini"
+              style={{
+                width: "100%",
+                marginTop: "10px",
+                padding: "11px 16px",
+                borderRadius: "10px",
+                border: `1px solid ${goldBorderStrong}`,
+                background: goldBgSoft,
+                color: goldColor,
+                fontSize: "12px",
+                fontWeight: 800,
+                cursor: "pointer",
+                transition: "all 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+                boxShadow: "0 4px 14px rgba(212,175,55,0.08)",
+              }}
+            >
+              🧭 Rute
+            </button>
+          )}
         </section>
 
         {/* Penetapan Card — disembunyikan bila tidak ada data legalitas sama sekali */}

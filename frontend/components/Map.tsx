@@ -7,6 +7,16 @@ import L from 'leaflet';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import 'leaflet.markercluster';
+import 'leaflet-routing-machine';
+import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
+import osrmTextInstructions from 'osrm-text-instructions';
+import { ROUTING_URL } from '../lib/routing';
+
+// Instruksi rute Bahasa Indonesia. Plugin leaflet-routing-machine punya kamus
+// internal sendiri yang TIDAK mengenal 'id' (akan lempar "No localization"),
+// karena itu language plugin dibiarkan 'en' dan kompilasi teks diganti dengan
+// osrm-text-instructions yang memang punya set lengkap bahasa Indonesia.
+const osrmId = osrmTextInstructions('v5');
 import { Site, categories } from '../data/sites';
 import { boundaries } from '../data/boundaries';
 import BasemapSwitcher from './map/BasemapSwitcher';
@@ -38,7 +48,30 @@ interface MapProps {
   sidebarCollapsed?: boolean;
   // Dipanggil setelah animasi fly-to selesai agar panel detail muncul serentak dengan popup
   onArrive?: () => void;
+  // Rute (uji lokal): tujuan saat tombol "Rute" ditekan; null untuk menghapus rute
+  routeTarget?: { lat: number; lng: number; name: string } | null;
 }
+
+// Step mentah OSRM v5 yang diteruskan plugin ke stepToText (belum diproses
+// menjadi instruction). Hanya properti yang dipakai osrm-text-instructions.
+interface RawStep {
+  maneuver: { type: string; modifier?: string; bearing_after?: number; exit?: number };
+  name?: string;
+  ref?: string;
+  destinations?: string;
+  exits?: string;
+  mode?: string;
+  rotary_name?: string;
+  driving_side?: string;
+  intersections?: Array<{ lanes?: Array<{ valid: boolean }> }>;
+}
+
+// Kontrol rute plugin meneruskan seluruh opsi ke plan & router bawaannya
+// (control.js: `new Plan(wps, options)` + `new OSRMv1(options)`), tetapi
+// @types-nya tidak menampung semua properti itu. Gabung agar tetap ter-tipe.
+type RouteControlOptions = L.Routing.RoutingControlOptions &
+  Pick<L.Routing.PlanOptions, 'createMarker' | 'draggableWaypoints' | 'language'> &
+  Pick<L.Routing.OSRMOptions, 'language' | 'serviceUrl' | 'stepToText' | 'timeout'>;
 
 function getPopupTarget(map: L.Map, latLng: L.LatLng, zoom: number, detailPanelWidth = 0) {
   const size = map.getSize();
@@ -81,8 +114,10 @@ export default function Map({
   flyNonce = 0,
   sidebarCollapsed = false,
   onArrive,
+  routeTarget = null,
 }: MapProps) {
   const mapRef = useRef<L.Map | null>(null);
+  const routeControlRef = useRef<L.Routing.Control | null>(null);
   const markersRef = useRef<Record<string, L.Marker>>({});
   const markerClusterGroupRef = useRef<L.MarkerClusterGroup | null>(null);
   const userMarkerRef = useRef<L.CircleMarker | null>(null);
@@ -104,11 +139,83 @@ export default function Map({
     onArriveRef.current = onArrive;
   }, [onArrive]);
 
+  // Ref untuk onUserLocFound — dipakai callback geolokasi rute (efek dependensi
+  // hanya routeTarget agar posisi terbaru tidak memicu rebuild kontrol rute)
+  const onUserLocFoundRef = useRef(onUserLocFound);
+  useEffect(() => {
+    onUserLocFoundRef.current = onUserLocFound;
+  }, [onUserLocFound]);
+
+  // Ref userLoc terbaru untuk seed awal rute tanpa mendaftarkan userLoc sebagai
+  // dependensi efek (menghindari loop rebuild saat posisi live terus berubah)
+  const latestUserLocRef = useRef(userLoc);
+  useEffect(() => {
+    latestUserLocRef.current = userLoc;
+  }, [userLoc]);
+
+  // Ref detailPanelWidth terbaru: dibaca saat fit panduan rute. Sengaja tidak
+  // didaftarkan sebagai dependensi efek rute agar buka/tutup panel tidak
+  // me-rebuild kontrol rute (menghapus rute yang sedang berjalan).
+  const detailPanelWidthRef = useRef(detailPanelWidth);
+  useEffect(() => {
+    detailPanelWidthRef.current = detailPanelWidth;
+  }, [detailPanelWidth]);
+
   // Ref untuk melacak selectedId terbaru di dalam callback event Leaflet
   const selectedIdRef = useRef(selectedId);
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  // Ref situs terbaru. `sites` TIDAK didaftarkan sebagai dependensi efek fly-to:
+  // identitas array berubah saat userLoc/GPS disegarkan (filter radius/sort),
+  // dan re-fly itu menimpa pandangan rute di desktop. Baca ref ini agar efek
+  // tetap memakai daftar terkini tanpa dipicu oleh refresh incidental.
+  const sitesRef = useRef(sites);
+  useEffect(() => {
+    sitesRef.current = sites;
+  }, [sites]);
+
+  // ── Helper label & highlight marker terpilih ──
+  // Dipanggil dari efek fly-to (setelah animasi) dan dari efek re-render daftar
+  // situs (setelah cluster dibangun ulang). Semua akses via ref, jadi aman
+  // dipanggil tanpa mendaftar ulang dependensi state.
+  const showSiteLabel = (m: L.Marker, id: string) => {
+    const map = mapRef.current;
+    if (!map || map.getSize().x <= 768) return;
+    const site = sitesRef.current.find((s) => s.id === id);
+    if (!site || m.getTooltip()?.isOpen()) return;
+    const name = `<span class="site-label-name${site.name.trim().split(/\s+/).length > 5 ? ' site-label-2lines' : ''}">${site.name.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</span>`;
+    m.bindTooltip(name, {
+      permanent: true,
+      direction: 'left',
+      offset: [-30, -8],
+      className: 'site-label-tooltip',
+    }).openTooltip();
+  };
+  // Hapus label judul dari marker yang tidak lagi dipilih.
+  const hideSiteLabel = (m: L.Marker) => {
+    if (m.getTooltip()) m.unbindTooltip();
+  };
+
+  // Tambahkan class highlight pada marker yang dipilih, hapus dari yang lain,
+  // angkat marker terpilih (agar tidak tertutup marker/cluster lain), dan
+  // tampilkan label judul cagar budaya di samping marker terpilih (ala Google Maps).
+  const applySelectedMarkerClass = () => {
+    Object.entries(markersRef.current).forEach(([id, m]) => {
+      const el = m.getElement();
+      if (!el) return;
+      if (id === selectedIdRef.current) {
+        el.classList.add('site-marker-selected');
+        m.setZIndexOffset(1000);
+        showSiteLabel(m, id);
+      } else {
+        el.classList.remove('site-marker-selected');
+        m.setZIndexOffset(0);
+        hideSiteLabel(m);
+      }
+    });
+  };
 
   // ── Init peta sekali ──
   useEffect(() => {
@@ -389,7 +496,7 @@ export default function Map({
     const map = mapRef.current;
     if (!map || !selectedId) return;
 
-    const site = sites.find((s) => s.id === selectedId);
+    const site = sitesRef.current.find((s) => s.id === selectedId);
     if (!site) return;
 
     // Mobile: Bottom Sheet & panel detail menutupi peta di area bawah. Popup dan
@@ -403,42 +510,6 @@ export default function Map({
     // Cegah performMove dijalankan dua kali untuk seleksi yang sama
     // (zoomToShowLayer kadang memanggil callback lebih dari sekali).
     let performedRef = false;
-
-    // Tampilkan label permanen berisi judul cagar budaya di samping marker.
-    const showSiteLabel = (m: L.Marker, id: string) => {
-      const site = sites.find((s) => s.id === id);
-      if (mobile || !site || m.getTooltip()?.isOpen()) return;
-      const name = `<span class="site-label-name${site.name.trim().split(/\s+/).length > 5 ? ' site-label-2lines' : ''}">${site.name.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</span>`;
-      m.bindTooltip(name, {
-        permanent: true,
-        direction: 'left',
-        offset: [-30, -8],
-        className: 'site-label-tooltip',
-      }).openTooltip();
-    };
-    // Hapus label judul dari marker yang tidak lagi dipilih.
-    const hideSiteLabel = (m: L.Marker) => {
-      if (m.getTooltip()) m.unbindTooltip();
-    };
-
-    // Tambahkan class highlight pada marker yang dipilih, hapus dari yang lain,
-    // angkat marker terpilih (agar tidak tertutup marker/cluster lain), dan
-    // tampilkan label judul cagar budaya di samping marker terpilih (ala Google Maps).
-    const applySelectedMarkerClass = () => {
-      Object.entries(markersRef.current).forEach(([id, m]) => {
-        const el = m.getElement();
-        if (!el) return;
-        if (id === selectedId) {
-          el.classList.add('site-marker-selected');
-          m.setZIndexOffset(1000);
-          showSiteLabel(m, id);
-        } else {
-          el.classList.remove('site-marker-selected');
-          m.setZIndexOffset(0);
-          hideSiteLabel(m);
-        }
-      });
-    };
 
     const flyToSite = (retriesLeft: number) => {
       if (cancelled) return;
@@ -524,7 +595,24 @@ export default function Map({
       });
     };
 
-  }, [selectedId, sites, detailPanelWidth, flyNonce]);
+    // `sites` sengaja tidak masuk dependensi fly-to (re-fly menimpa pandangan
+    // rute saat userLoc/GPS menyegarkan daftar). Baca catatan pada sitesRef.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, detailPanelWidth, flyNonce]);
+
+  // ── Re-apply state pilihan saat daftar situs/tema berubah (tanpa fly-to) ──
+  // Marker cluster dibangun ulang oleh efek marker saat `sites`/`theme` berubah;
+  // efek ini mengembalikan highlight & label pada marker terpilih TANPA menggeser
+  // peta. Fly-to hanya boleh terjadi karena aksi pemilihan pengguna (atau
+  // deep-link), bukan karena refresh incidental (mis. userLoc/GPS saat rute aktif)
+  // yang selain itu membuat peta loncat kembali ke situs tujuan di desktop.
+  useEffect(() => {
+    if (!selectedIdRef.current) return;
+    applySelectedMarkerClass();
+    // applySelectedMarkerClass hanya memakai ref (markersRef, selectedIdRef,
+    // sitesRef, mapRef) yang objeknya stabil — aman tanpa masuk dependensi.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sites, theme]);
 
   // Saat tidak ada situs yang dipilih (panel ditutup / deselect / klik area
   // kosong), bersihkan semua label judul & highlight marker, dan tutup semua
@@ -543,6 +631,351 @@ export default function Map({
       }
     });
   }, [selectedId]);
+
+  // ── Rute (uji lokal): gambar rute OSRM dari titik asal ke situs terpilih ──
+  // Asal dilacak live via watchPosition — saat pengguna berjalan, posisi asal &
+  // rute ikut diperbarui (throttle: geser hanya bila berpindah >35m / min 4 detik).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (routeControlRef.current) {
+      map.removeControl(routeControlRef.current);
+      routeControlRef.current = null;
+    }
+    userMarkerRef.current?.remove();
+    userMarkerRef.current = null;
+
+    const Routing = L.Routing;
+    if (!routeTarget || !Routing) return;
+
+    // Marker wajah baru: titik asal emas berdenyut (tujuan memakai marker situs
+    // yang sudah ada — tidak perlu pin/tooltip duplikat)
+    const originIcon = L.divIcon({
+      className: 'route-marker-styles',
+      html: '<div class="route-origin-wrap"><span class="route-origin-heading"></span><span class="route-origin-pulse"></span><span class="route-origin-core"></span></div>',
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
+    });
+
+    let disposed = false;
+    let built = false;
+    let watchId: number | null = null;
+    let lastSpliceAt = 0;
+    let lastSpliceLoc: { lat: number; lng: number } | null = null;
+    // Ketelitian (meter) fiks GPS terbaik yang sudah dipakai untuk titik asal.
+    // `accuracy` dari Geolocation API makin kecil = fiks makin presisi. Dipakai
+    // agar asal rute segera dikoreksi (splice) saat GPS menyempurnakan fiksnya.
+    let bestAccuracy: number | null = null;
+    let originMarker: L.Marker | null = null;
+    // Heading (° dari utara) dari geolocation; null bila perangkat tak menyediakan.
+    let latestHeading: number | null = null;
+    // Fiks GPS terakhir — untuk menghitung arah gerak saat heading tidak tersedia.
+    let lastFixLoc: { lat: number; lng: number } | null = null;
+    // Fit sudut pandang HANYA sekali saat rute pertama terbentuk — agar peta
+    // segera menampilkan posisi asal & rute, tanpa loncat-loncat saat GPS bergerak.
+    let fitBoundsOnce = false;
+    // Timer pengaman: pastikan kamera tetap bergeser ke posisi GPS & tujuan walau
+    // server OSRM lambat/gantung (respons bisa tidak datang sama sekali). Dipicu
+    // lewat fitBoundsOnce, jadi hanya berjalan sekali dan tidak mengganggu fit
+    // yang sudah dilakukan lewat event routeselected.
+    let fitTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const shortTitle =
+      routeTarget.name.length > 20 ? routeTarget.name.slice(0, 20) + '…' : routeTarget.name;
+    const formatDist = (m: number) =>
+      m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+    const formatDur = (s: number) =>
+      s >= 60 ? `±${Math.max(1, Math.round(s / 60))} mnt` : `${Math.max(1, Math.round(s))} dtk`;
+    // Hindari nama situs <script> / HTML tidak sengaja terbaca sebagai markup
+    const escapeHtml = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+    const originTooltipHtml = (head: string, meta: string, sub: string) =>
+      `<div style="display:flex;flex-direction:column;gap:3px;min-width:150px;max-width:250px">
+        <div style="display:flex;align-items:center;gap:6px;font-weight:800;color:#F7E08A;font-size:11.5px;letter-spacing:.3px;white-space:nowrap">📍 ${head}</div>
+        <div style="font-weight:800;color:#ffffff;font-size:13px;white-space:nowrap">${meta}</div>
+        <div style="font-size:10.5px;color:#A7B3C4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</div>
+      </div>`;
+
+    // Putar panah arah mengikuti heading. Arah default (0°) menunjuk utara;
+    // heading geolocation = derajat searah jarum jam dari utara sejati.
+    const setHeading = (deg: number | null) => {
+      const el = originMarker
+        ?.getElement()
+        ?.querySelector<HTMLElement>('.route-origin-heading');
+      if (!el) return;
+      if (deg == null) {
+        el.classList.remove('route-origin-heading-visible');
+        return;
+      }
+      el.classList.add('route-origin-heading-visible');
+      el.style.transform = `rotate(${deg}deg)`;
+    };
+
+    const buildControl = (origin: L.LatLng) => {
+      if (built || disposed) return;
+      built = true;
+
+      // Arahkan kamera sekali saja saat rute terbentuk (atau gagal): pastikan
+      // titik ASAL jelas masuk frame — bingkai diperluas ke sisi tujuan sehingga
+      // asal tampil tegas di sisi kiri peta dan rute "mengalir" ke kanan menuju
+      // tujuan. Desktop diberi padding selebar panel detail agar tujuan tidak
+      // tersembunyi di balik panel kanan. Tidak dipanggil ulang saat GPS bergerak.
+      const positionRouteView = (route?: L.Routing.IRoute) => {
+        if (fitBoundsOnce) return;
+        fitBoundsOnce = true;
+        const dest = L.latLng(routeTarget.lat, routeTarget.lng);
+        const routeCoords = route?.coordinates;
+        const coords = routeCoords && routeCoords.length > 1 ? routeCoords : [origin, dest];
+        const bounds = L.latLngBounds(coords);
+        bounds.extend(origin);
+        bounds.extend(dest);
+        // Perluas ke arah luar melewati tujuan → frame bergeser agar asal di kiri.
+        const projZoom = 11;
+        const oPt = map.project(origin, projZoom);
+        const dPt = map.project(dest, projZoom);
+        const beyondDest = dPt.subtract(oPt).multiplyBy(0.45);
+        if (beyondDest.x !== 0 || beyondDest.y !== 0) {
+          bounds.extend(map.unproject(dPt.add(beyondDest), projZoom));
+        }
+        const padded = bounds.pad(0.12);
+        const size = map.getSize();
+        const fitOpts: L.FitBoundsOptions & L.ZoomPanOptions = { maxZoom: 15, duration: 0.9 };
+        if (size.x > 768 && detailPanelWidthRef.current > 0) {
+          fitOpts.paddingTopLeft = [10, size.y * 0.2];
+          fitOpts.paddingBottomRight = [
+            Math.min(detailPanelWidthRef.current, size.x * 0.45),
+            size.y * 0.2,
+          ];
+        } else {
+          fitOpts.paddingTopLeft = [12, 12];
+          fitOpts.paddingBottomRight = [12, 12];
+        }
+        map.flyToBounds(padded, fitOpts);
+      };
+
+      const controlOptions: RouteControlOptions = {
+        waypoints: [origin, L.latLng(routeTarget.lat, routeTarget.lng)],
+        routeWhileDragging: true,
+        showAlternatives: false,
+        fitSelectedRoutes: false,
+        show: true,
+        collapsible: true,
+        draggableWaypoints: false,
+        formatter: new Routing.Formatter({
+          language: 'en',
+          unitNames: {
+            meters: 'm',
+            kilometers: 'km',
+            yards: 'yd',
+            miles: 'mi',
+            hours: 'jam',
+            minutes: 'mnt',
+            seconds: 'dtk',
+          },
+          distanceTemplate: '{value} {unit}',
+        }),
+        summaryTemplate:
+          '<h2 class="rt-title">🧭 Petunjuk Rute</h2>' +
+          '<div class="rt-summary">{distance} · {time}</div>',
+        createMarker: (i: number, wp: L.Routing.Waypoint) => {
+          if (i !== 0) {
+            // Tujuan memakai marker situs yang sudah ada. Plugin mensyaratkan
+            // marker waypoint TIDAK pernah null (_markers[i] dipakai saat
+            // klik-tarik garis rute), jadi tampilkan marker tak terlihat 1x1.
+            return L.marker(wp.latLng, {
+              icon: L.divIcon({ className: 'route-marker-styles', html: '', iconSize: [1, 1] }),
+              keyboard: false,
+            });
+          }
+          const m = L.marker(wp.latLng, { icon: originIcon, keyboard: false, zIndexOffset: 1000 })
+            .bindTooltip(originTooltipHtml('Posisi Anda', 'menghitung rute…', `ke ${escapeHtml(shortTitle)}`), {
+              permanent: true, direction: 'top', className: 'route-tooltip',
+            });
+          originMarker = m;
+          return m;
+        },
+        // Terjemahan instruksi ke Bahasa Indonesia via osrm-text-instructions.
+        // Plugin meneruskan seluruh opsi kontrol ke router OSRMv1 bawaan
+        // (control.js: `router || new OSRMv1(options)`), jadi stepToText di sini
+        // benar-benar dipakai untuk meramu teks langkah arah.
+        language: 'en',
+        serviceUrl: ROUTING_URL,
+        // Batasi waktu tunggu respons OSRM dari default 30 detik menjadi 8 detik
+        // agar kamera cepat beralih ke posisi GPS bila server lambat/gantung.
+        timeout: 8000,
+        stepToText: (step: RawStep, opts?: { legIndex?: number; legCount?: number }) =>
+          osrmId.compile('id', step, { legIndex: opts?.legIndex, legCount: opts?.legCount }),
+        lineOptions: {
+          styles: [{ color: '#D4AF37', weight: 5, opacity: 0.9 }],
+          extendToWaypoints: true,
+          missingRouteTolerance: 10,
+        },
+      };
+      const control = Routing.control(controlOptions).addTo(map);
+
+      // Perbarui tooltip titik asal dengan jarak & durasi rute hasil OSRM.
+      // Event `routeselected` terpicu ulang saat rute diperbarui (posisi pindah),
+      // jadi waktu jalan jaraknya ikut menyesuaikan.
+      control.on('routeselected', (e) => {
+        const route = e?.route;
+        const dist = route?.summary?.totalDistance;
+        const dur = route?.summary?.totalTime;
+        if (dist != null && originMarker) {
+          originMarker.setTooltipContent(
+            originTooltipHtml(
+              'Posisi Anda',
+              `${formatDist(dist)} · ${formatDur(dur)}`,
+              `ke ${escapeHtml(shortTitle)}`
+            )
+          );
+        }
+        positionRouteView(route);
+      });
+
+      // Walaupun OSRM gagal merespons, kamera tetap diarahkan ke asal & tujuan
+      // (garis rute tak ada, tapi posisi terlihat sesuai permintaan pengguna).
+      control.on('routingerror', () => {
+        positionRouteView();
+      });
+
+      routeControlRef.current = control;
+
+      // Kamera TIDAK boleh menunggu respons OSRM: jika petunjuk rute belum
+      // terpilih dalam 2,5 detik, geser pandangan ke posisi GPS & tujuan sekarang
+      // juga (fitBoundsOnce membuat ini efektif hanya sekali). Bila rute datang
+      // lebih cepat, fit lewat `routeselected` yang memakai geometri rute asli.
+      fitTimer = setTimeout(() => {
+        if (!disposed) positionRouteView();
+      }, 2500);
+    };
+
+    // Jarak permukaan (meter) antara dua koordinat — untuk throttling
+    const distM = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+      const R = 6371e3;
+      const rad = (d: number) => (d * Math.PI) / 180;
+      const dLat = rad(b.lat - a.lat);
+      const dLng = rad(b.lng - a.lng);
+      const s =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.sqrt(s));
+    };
+
+    // Bearing (derajat dari utara, searah jarum jam) antara dua koordinat —
+    // fallback arah panah saat sensornya tidak mengirim heading.
+    const bearingDeg = (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
+      const rad = (d: number) => (d * Math.PI) / 180;
+      const y = Math.sin(rad(to.lng - from.lng)) * Math.cos(rad(to.lat));
+      const x =
+        Math.cos(rad(from.lat)) * Math.sin(rad(to.lat)) -
+        Math.sin(rad(from.lat)) * Math.cos(rad(to.lat)) * Math.cos(rad(to.lng - from.lng));
+      return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+    };
+
+    // Suntik lokasi ke parent hanya saat posisi berubah (supaya radius SIG sinkron
+    // tapi tidak memicu re-render berlebihan).
+    const maybeNotifyParent = (loc: { lat: number; lng: number }) => {
+      const moved = lastSpliceLoc ? distM(loc, lastSpliceLoc) > 35 : true;
+      const now = Date.now();
+      if (moved && now - lastSpliceAt >= 4000) {
+        lastSpliceAt = now;
+        lastSpliceLoc = loc;
+        onUserLocFoundRef.current(loc);
+      }
+    };
+
+    // Seed posisi awal: pakai lokasi tersimpan terlebih dahulu (efektif & akurat:
+    // sudah dikalibrasi oleh radius/live tracking sebelumnya), lalu fiks GPS baru
+    // bila tak ada, dan terakhir fallback Tanjungpinang. Fiks GPS yang lebih
+    // akurat tetap bisa mengoreksi asal lewat watchPosition (lihat di bawah).
+    const seedOrigin = async () => {
+      const latest = latestUserLocRef.current;
+      if (latest) {
+        buildControl(L.latLng(latest.lat, latest.lng));
+        setHeading(null);
+        return;
+      }
+      if (typeof navigator !== 'undefined' && navigator.geolocation?.getCurrentPosition) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              timeout: 2500, maximumAge: 2000, enableHighAccuracy: true,
+            });
+          });
+          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          latestHeading = pos.coords.heading ?? null;
+          lastFixLoc = loc;
+          bestAccuracy = pos.coords.accuracy;
+          maybeNotifyParent(loc);
+          buildControl(L.latLng(loc.lat, loc.lng));
+          setHeading(latestHeading);
+          return;
+        } catch {
+          // Izin lokasi ditolak / tidak tersedia — lanjut ke fallback
+        }
+      }
+      buildControl(L.latLng(0.92, 104.45));
+      setHeading(null);
+    };
+
+    seedOrigin();
+
+    // Pelacakan live — update waypoint 0 saat pengguna berpindah
+    if (typeof navigator !== 'undefined' && navigator.geolocation?.watchPosition) {
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          if (disposed) return;
+          const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          // Prioritas arah: sensor heading (kompas) → kalau tidak ada, arah gerak
+          // dari bearing antar dua fiks (min ~4 m agar tidak bergetar oleh noise).
+          const deviceHeading = pos.coords.heading;
+          if (deviceHeading != null) {
+            latestHeading = deviceHeading;
+          } else if (lastFixLoc && distM(loc, lastFixLoc) > 4) {
+            latestHeading = bearingDeg(lastFixLoc, loc);
+          }
+          lastFixLoc = loc;
+          maybeNotifyParent(loc);
+          if (!built) {
+            bestAccuracy = pos.coords.accuracy;
+            buildControl(L.latLng(loc.lat, loc.lng));
+            setHeading(latestHeading);
+            return;
+          }
+          const now = Date.now();
+          // Geser asal rute bila posisi berpindah cukup jauh ATAU fiks yang lebih
+          // akurat tersedia (accuracy makin kecil) — dengan jeda minimal 4 dtk.
+          // Fiks pertama sering kasar (IP/Wi-Fi); tanpa `betterFix`, asal rute
+          // bisa tertahan di posisi salah padahal GPS sudah mengunci lebih tepat.
+          const moved = lastSpliceLoc ? distM(loc, lastSpliceLoc) > 35 : true;
+          const betterFix = bestAccuracy == null || pos.coords.accuracy < bestAccuracy - 5;
+          if (betterFix) bestAccuracy = pos.coords.accuracy;
+          if (now - lastSpliceAt >= 4000 && (moved || betterFix)) {
+            lastSpliceAt = now;
+            lastSpliceLoc = loc;
+            routeControlRef.current?.spliceWaypoints(0, 1, Routing.waypoint(L.latLng(loc.lat, loc.lng)));
+          }
+          // Arah hadap ikut diperbarui walau posisi belum bergeser (berputar di
+          // tempat) — dan dipanggil ulang setelah splice karena plugin bisa
+          // membuat ulang elemen marker waypoint.
+          setHeading(latestHeading);
+        },
+        () => {
+          // Izin lokasi ditolak / hilang — biarkan posisi terakhir tetap,
+          // pengguna masih bisa melihat rute dari titik asal yang tersimpan.
+        },
+        { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+      );
+    }
+
+    return () => {
+      disposed = true;
+      if (fitTimer != null) clearTimeout(fitTimer);
+      if (watchId != null) navigator.geolocation?.clearWatch(watchId);
+    };
+  }, [routeTarget]);
 
   // ── Geolokasi + lingkaran radius ──
   useEffect(() => {

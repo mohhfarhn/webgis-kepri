@@ -99,6 +99,9 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
   const [userLocating, setUserLocating] = useState(false);
   const [boundaryMode, setBoundaryMode] = useState(false);
 
+  // Rute (uji lokal): tujuan saat tombol "Rute" ditekan; null = tidak ada rute
+  const [routeTarget, setRouteTarget] = useState<{ lat: number; lng: number; name: string } | null>(null);
+
   // Sidebar tab state
   const [activeSidebarTab, setActiveSidebarTab] = useState<'situs' | 'sig'>('situs');
 
@@ -396,6 +399,9 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
     if (!wasOpen) setPanelReady(false);
     const site = allSites.find((s) => s.id === id);
     if (site) setDetailSite(site);
+    // Mobile: pilih situs dari daftar → tutup sheet menu situs, panel detail yang
+    // muncul cukup mengambil alih layar (keduanya tidak boleh timpang tindih).
+    if (isMobile) setMobileSheetOpen(false);
     if (site?.slug) {
       // Tandai slug sudah diterapkan agar efek deep-link tidak terpicu ulang
       // (yang akan me-reset filter & me-rebuild semua marker → peta berkedip).
@@ -404,7 +410,7 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
       appliedDeepLinkRef.current = site.slug;
       router.replace(`/?site=${encodeURIComponent(site.slug)}`, { scroll: false });
     }
-  }, [allSites, router, siteSlugParam, selectedId]);
+  }, [allSites, router, siteSlugParam, selectedId, isMobile, setMobileSheetOpen]);
 
   const handleCloseDetail = useCallback(() => {
     setSelectedId(null);
@@ -414,6 +420,23 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
       router.replace('/', { scroll: false });
     }
   }, [router, siteSlugParam]);
+
+  const handleToggleRoute = useCallback((site: Site | null) => {
+    if (!site) return;
+    const isSame =
+      routeTarget != null &&
+      routeTarget.lat === site.lat &&
+      routeTarget.lng === site.lng;
+    // Klik "Rute" lagi pada situs yang sama → batalkan rute. Panel detail tetap
+    // terbuka agar pengguna kembali ke konteks situs.
+    if (isSame) {
+      setRouteTarget(null);
+      return;
+    }
+    setRouteTarget({ lat: site.lat, lng: site.lng, name: site.name });
+    // Mobile: mulai rute → tutup panel detail agar peta + petunjuk terlihat penuh.
+    if (isMobile) handleCloseDetail();
+  }, [routeTarget, isMobile, handleCloseDetail, setRouteTarget]);
 
   const handleToggleRadius = useCallback(() => {
     // Tampilkan "Mendeteksi lokasi..." hanya bila belum punya lokasi. Jika lokasi
@@ -679,9 +702,52 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
             flyNonce={flyNonce}
             sidebarCollapsed={sidebarCollapsed}
             onArrive={handleArrive}
+            routeTarget={routeTarget}
           />
 
           {sidebarToggle()}
+
+          {/* Badge rute aktif — rute tetap tampil walau panel detail ditutup;
+              tombol untuk menghapusnya dari peta */}
+          {routeTarget && (
+            <button
+              type="button"
+              onClick={() => setRouteTarget(null)}
+              title="Hapus rute"
+              style={{
+                position: 'absolute',
+                bottom: isMobile ? '164px' : '24px',
+                left: isMobile ? 'auto' : '50%',
+                right: isMobile ? '12px' : 'auto',
+                transform: isMobile ? 'none' : 'translateX(-50%)',
+                zIndex: 1100,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '7px 14px',
+                borderRadius: '999px',
+                border: `1px solid ${goldBorder}`,
+                background: isLight
+                  ? 'rgba(255, 255, 255, 0.95)'
+                  : 'rgba(24, 26, 32, 0.95)',
+                color: goldColor,
+                fontSize: '12px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                boxShadow: '0 6px 20px rgba(0, 0, 0, 0.35)',
+                backdropFilter: 'blur(6px)',
+                WebkitBackdropFilter: 'blur(6px)',
+                maxWidth: 'calc(100vw - 32px)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              <span>🧭</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{routeTarget.name}</span>
+              <span style={{ color: isLight ? '#64748B' : '#94A3B8', fontWeight: 700, flexShrink: 0 }}>✕</span>
+            </button>
+          )}
 
           {isMobile && (
             <div
@@ -708,6 +774,7 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
             onClose={handleCloseDetail}
             theme={theme === 'light' ? 'light' : 'dark'}
             isMobile={isMobile}
+            onRoute={detailSite ? () => handleToggleRoute(detailSite) : undefined}
           />
 
           {/* MOBILE: FAB button */}
