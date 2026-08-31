@@ -50,6 +50,8 @@ interface MapProps {
   onArrive?: () => void;
   // Rute (uji lokal): tujuan saat tombol "Rute" ditekan; null untuk menghapus rute
   routeTarget?: { lat: number; lng: number; name: string } | null;
+  // Callback ketika geolocation untuk routing gagal
+  onRouteLocationError?: (error: { code: number; message: string; retryable: boolean }) => void;
 }
 
 // Step mentah OSRM v5 yang diteruskan plugin ke stepToText (belum diproses
@@ -115,6 +117,7 @@ export default function Map({
   sidebarCollapsed = false,
   onArrive,
   routeTarget = null,
+  onRouteLocationError,
 }: MapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const routeControlRef = useRef<L.Routing.Control | null>(null);
@@ -145,6 +148,12 @@ export default function Map({
   useEffect(() => {
     onUserLocFoundRef.current = onUserLocFound;
   }, [onUserLocFound]);
+
+  // Ref untuk onRouteLocationError — dipanggil saat geolocation routing gagal
+  const onRouteLocationErrorRef = useRef(onRouteLocationError);
+  useEffect(() => {
+    onRouteLocationErrorRef.current = onRouteLocationError;
+  }, [onRouteLocationError]);
 
   // Ref userLoc terbaru untuk seed awal rute tanpa mendaftarkan userLoc sebagai
   // dependensi efek (menghindari loop rebuild saat posisi live terus berubah)
@@ -886,9 +895,11 @@ export default function Map({
       }
     };
 
-    // Seed posisi awal: selalu minta GPS baru (enableHighAccuracy, maximumAge: 0).
-    // Jika gagal (izin ditolak, timeout, tidak tersedia), gunakan lokasi tersimpan
-    // dari radius mode sebagai fallback. Terakhir fallback Tanjungpinang.
+    // Seed posisi awal: SELALU minta fresh GPS (enableHighAccuracy, maximumAge: 0).
+    // Jika PERMISSION_DENIED: batalkan routing, kirim error ke UI (tidak pakai fallback).
+    // Jika POSITION_UNAVAILABLE / TIMEOUT: kirim error ke UI (tidak pakai fallback),
+    // UI menentukan apakah retry.
+    // latestUserLocRef.current TIDAK dipakai sebagai fallback routing; hanya untuk Radius Mode.
     const seedOrigin = async () => {
       if (typeof navigator !== 'undefined' && navigator.geolocation?.getCurrentPosition) {
         try {
@@ -922,21 +933,29 @@ export default function Map({
             POSITION_UNAVAILABLE: 2,
             TIMEOUT: 3,
           });
-          // Izin lokasi ditolak / tidak tersedia — gunakan lokasi tersimpan jika ada
+          // Kirim error ke UI — JANGAN pakai fallback cached/default untuk routing
+          const errorInfo = {
+            code: geolocationErr.code,
+            message:
+              geolocationErr.code === 1
+                ? 'Izin lokasi diperlukan untuk menggunakan fitur Rute.'
+                : geolocationErr.code === 2
+                ? 'Lokasi tidak tersedia. Pastikan layanan lokasi perangkat aktif.'
+                : geolocationErr.code === 3
+                ? 'Gagal mendapatkan lokasi. Silakan coba lagi.'
+                : 'Terjadi kesalahan geolocation.',
+            retryable: geolocationErr.code === 2 || geolocationErr.code === 3,
+          };
+          onRouteLocationErrorRef.current?.(errorInfo);
+          return; // Batalkan routing, JANGAN buildControl dengan fallback
         }
       }
-      // Fallback 1: lokasi tersimpan dari radius mode
-      const latest = latestUserLocRef.current;
-      if (latest) {
-        console.log('[Geolocation] Routing seed fallback: using cached location', latest);
-        buildControl(L.latLng(latest.lat, latest.lng));
-        setHeading(null);
-        return;
-      }
-      // Fallback 2: Tanjungpinang
-      console.log('[Geolocation] Routing seed fallback: using default Tanjungpinang');
-      buildControl(L.latLng(0.92, 104.45));
-      setHeading(null);
+      // Tidak ada geolocation API — kirim error dan batalkan
+      onRouteLocationErrorRef.current?.({
+        code: 0,
+        message: 'Geolocation tidak didukung browser ini.',
+        retryable: false,
+      });
     };
 
     seedOrigin();
@@ -964,6 +983,11 @@ export default function Map({
           lastFixLoc = loc;
           maybeNotifyParent(loc);
           if (!built) {
+            // Jika seedOrigin gagal (mis. permission denied), built tetap false.
+            // Jangan buat routing dari watchPosition jika fresh GPS gagal.
+            // Hanya lanjut jika ada fresh fix (permission granted) tapi seedOrigin
+            // belum sempat jalan (race condition) — ini edge case, tapi aman.
+            console.log('[Geolocation] Routing watch: first fix, building control');
             bestAccuracy = pos.coords.accuracy;
             buildControl(L.latLng(loc.lat, loc.lng));
             setHeading(latestHeading);
@@ -996,8 +1020,15 @@ export default function Map({
             POSITION_UNAVAILABLE: 2,
             TIMEOUT: 3,
           });
-          // Izin lokasi ditolak / hilang — biarkan posisi terakhir tetap,
-          // pengguna masih bisa melihat rute dari titik asal yang tersimpan.
+          // Jika permission denied saat watch, kirim error ke UI
+          // (routing sudah tidak dibangun karena built=false)
+          if (geolocationErr.code === 1) {
+            onRouteLocationErrorRef.current?.({
+              code: 1,
+              message: 'Izin lokasi diperlukan untuk menggunakan fitur Rute.',
+              retryable: false,
+            });
+          }
         },
         { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
       );

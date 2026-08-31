@@ -101,6 +101,8 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
 
   // Rute (uji lokal): tujuan saat tombol "Rute" ditekan; null = tidak ada rute
   const [routeTarget, setRouteTarget] = useState<{ lat: number; lng: number; name: string } | null>(null);
+  // Error geolocation untuk routing
+  const [routeError, setRouteError] = useState<{ code: number; message: string; retryable: boolean } | null>(null);
 
   // Sidebar tab state
   const [activeSidebarTab, setActiveSidebarTab] = useState<'situs' | 'sig'>('situs');
@@ -431,12 +433,25 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
     // terbuka agar pengguna kembali ke konteks situs.
     if (isSame) {
       setRouteTarget(null);
+      setRouteError(null);
       return;
     }
+    setRouteError(null); // Clear previous error when starting new route
     setRouteTarget({ lat: site.lat, lng: site.lng, name: site.name });
     // Mobile: mulai rute → tutup panel detail agar peta + petunjuk terlihat penuh.
     if (isMobile) handleCloseDetail();
-  }, [routeTarget, isMobile, handleCloseDetail, setRouteTarget]);
+  }, [routeTarget, isMobile, handleCloseDetail, setRouteTarget, setRouteError]);
+
+  const handleRouteLocationError = useCallback(
+    (error: { code: number; message: string; retryable: boolean }) => {
+      setRouteError(error);
+      // Permission denied: clear routeTarget so route UI disappears
+      if (error.code === 1) {
+        setRouteTarget(null);
+      }
+    },
+    [setRouteTarget, setRouteError]
+  );
 
   const handleToggleRadius = useCallback(() => {
     // Tampilkan "Mendeteksi lokasi..." hanya bila belum punya lokasi. Jika lokasi
@@ -703,6 +718,7 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
             sidebarCollapsed={sidebarCollapsed}
             onArrive={handleArrive}
             routeTarget={routeTarget}
+            onRouteLocationError={handleRouteLocationError}
           />
 
           {sidebarToggle()}
@@ -747,6 +763,68 @@ function HomeContent({ initialTheme }: { initialTheme: 'light' | 'dark' | 'satel
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{routeTarget.name}</span>
               <span style={{ color: isLight ? '#64748B' : '#94A3B8', fontWeight: 700, flexShrink: 0 }}>✕</span>
             </button>
+          )}
+
+          {/* Routing geolocation error */}
+          {routeError && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: isMobile ? '230px' : '90px',
+                left: isMobile ? '12px' : '50%',
+                right: isMobile ? '12px' : 'auto',
+                transform: isMobile ? 'none' : 'translateX(-50%)',
+                zIndex: 1100,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                maxWidth: 'calc(100vw - 24px)',
+                pointerEvents: 'auto',
+              }}
+            >
+              <div
+                style={{
+                  background: isLight ? '#FEF2F2' : 'rgba(127, 29, 29, 0.9)',
+                  border: `1px solid ${isLight ? '#FECACA' : '#EF4444'}`,
+                  borderRadius: '12px',
+                  padding: '12px 16px',
+                  color: isLight ? '#991B1B' : '#FEE2E2',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.3)',
+                  backdropFilter: 'blur(8px)',
+                  WebkitBackdropFilter: 'blur(8px)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '16px' }}>⚠️</span>
+                  <span>{routeError.message}</span>
+                </div>
+              </div>
+              {routeError.retryable && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRouteError(null);
+                    if (detailSite) handleToggleRoute(detailSite);
+                  }}
+                  style={{
+                    background: 'linear-gradient(135deg, #D4AF37, #B8960C)',
+                    border: 'none',
+                    borderRadius: '999px',
+                    color: '#0B0F19',
+                    padding: '10px 20px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 16px rgba(212, 175, 55, 0.4)',
+                    alignSelf: 'center',
+                  }}
+                >
+                  🔄 Coba Lagi
+                </button>
+              )}
+            </div>
           )}
 
           {isMobile && (
