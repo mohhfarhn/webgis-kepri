@@ -886,17 +886,10 @@ export default function Map({
       }
     };
 
-    // Seed posisi awal: pakai lokasi tersimpan terlebih dahulu (efektif & akurat:
-    // sudah dikalibrasi oleh radius/live tracking sebelumnya), lalu fiks GPS baru
-    // bila tak ada, dan terakhir fallback Tanjungpinang. Fiks GPS yang lebih
-    // akurat tetap bisa mengoreksi asal lewat watchPosition (lihat di bawah).
+    // Seed posisi awal: selalu minta GPS baru (enableHighAccuracy, maximumAge: 0).
+    // Jika gagal (izin ditolak, timeout, tidak tersedia), gunakan lokasi tersimpan
+    // dari radius mode sebagai fallback. Terakhir fallback Tanjungpinang.
     const seedOrigin = async () => {
-      const latest = latestUserLocRef.current;
-      if (latest) {
-        buildControl(L.latLng(latest.lat, latest.lng));
-        setHeading(null);
-        return;
-      }
       if (typeof navigator !== 'undefined' && navigator.geolocation?.getCurrentPosition) {
         try {
           const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -929,9 +922,19 @@ export default function Map({
             POSITION_UNAVAILABLE: 2,
             TIMEOUT: 3,
           });
-          // Izin lokasi ditolak / tidak tersedia — lanjut ke fallback
+          // Izin lokasi ditolak / tidak tersedia — gunakan lokasi tersimpan jika ada
         }
       }
+      // Fallback 1: lokasi tersimpan dari radius mode
+      const latest = latestUserLocRef.current;
+      if (latest) {
+        console.log('[Geolocation] Routing seed fallback: using cached location', latest);
+        buildControl(L.latLng(latest.lat, latest.lng));
+        setHeading(null);
+        return;
+      }
+      // Fallback 2: Tanjungpinang
+      console.log('[Geolocation] Routing seed fallback: using default Tanjungpinang');
       buildControl(L.latLng(0.92, 104.45));
       setHeading(null);
     };
