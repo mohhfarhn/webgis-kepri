@@ -901,10 +901,18 @@ export default function Map({
         try {
           const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject, {
-              timeout: 2500, maximumAge: 2000, enableHighAccuracy: true,
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 0,
             });
           });
           const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          console.log('[Geolocation] Routing seed:', {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            timestamp: new Date(pos.timestamp).toISOString(),
+          });
           latestHeading = pos.coords.heading ?? null;
           lastFixLoc = loc;
           bestAccuracy = pos.coords.accuracy;
@@ -912,7 +920,15 @@ export default function Map({
           buildControl(L.latLng(loc.lat, loc.lng));
           setHeading(latestHeading);
           return;
-        } catch {
+        } catch (err) {
+          const geolocationErr = err as GeolocationPositionError;
+          console.warn('[Geolocation] Routing seed error:', {
+            code: geolocationErr.code,
+            message: geolocationErr.message,
+            PERMISSION_DENIED: 1,
+            POSITION_UNAVAILABLE: 2,
+            TIMEOUT: 3,
+          });
           // Izin lokasi ditolak / tidak tersedia — lanjut ke fallback
         }
       }
@@ -928,6 +944,12 @@ export default function Map({
         (pos) => {
           if (disposed) return;
           const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          console.log('[Geolocation] Routing watch:', {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            timestamp: new Date(pos.timestamp).toISOString(),
+          });
           // Prioritas arah: sensor heading (kompas) → kalau tidak ada, arah gerak
           // dari bearing antar dua fiks (min ~4 m agar tidak bergetar oleh noise).
           const deviceHeading = pos.coords.heading;
@@ -962,11 +984,19 @@ export default function Map({
           // membuat ulang elemen marker waypoint.
           setHeading(latestHeading);
         },
-        () => {
+        (err) => {
+          const geolocationErr = err as GeolocationPositionError;
+          console.warn('[Geolocation] Routing watch error:', {
+            code: geolocationErr.code,
+            message: geolocationErr.message,
+            PERMISSION_DENIED: 1,
+            POSITION_UNAVAILABLE: 2,
+            TIMEOUT: 3,
+          });
           // Izin lokasi ditolak / hilang — biarkan posisi terakhir tetap,
           // pengguna masih bisa melihat rute dari titik asal yang tersimpan.
         },
-        { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
       );
     }
 
@@ -1008,17 +1038,32 @@ export default function Map({
       navigator.geolocation?.getCurrentPosition(
         (pos) => {
           const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          console.log('[Geolocation] Radius mode:', {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            timestamp: new Date(pos.timestamp).toISOString(),
+          });
           onUserLocFound(loc);
           drawRadius(loc);
           map.flyTo([loc.lat, loc.lng], 10, { duration: 0.8 });
         },
-        () => {
+        (err) => {
+          const geolocationErr = err as GeolocationPositionError;
+          console.warn('[Geolocation] Radius mode error:', {
+            code: geolocationErr.code,
+            message: geolocationErr.message,
+            PERMISSION_DENIED: 1,
+            POSITION_UNAVAILABLE: 2,
+            TIMEOUT: 3,
+          });
           // Fallback: Tanjungpinang
           const loc = { lat: 0.92, lng: 104.45 };
           onUserLocFound(loc);
           drawRadius(loc);
           map.flyTo([loc.lat, loc.lng], 10, { duration: 0.8 });
-        }
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
       );
     }
   }, [radiusMode, radiusKm, userLoc, onUserLocFound]);
