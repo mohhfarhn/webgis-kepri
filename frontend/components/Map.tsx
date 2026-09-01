@@ -641,6 +641,203 @@ export default function Map({
     });
   }, [selectedId]);
 
+  // ── Custom CSS for routing instructions ──
+  useEffect(() => {
+    const styleId = 'rt-custom-styles';
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      /* Routing container */
+      .rt-container {
+        font-family: inherit;
+        font-size: 13px;
+        line-height: 1.5;
+        color: #1E293B;
+        background: #FFFFFF;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      }
+
+      /* Header - sticky */
+      .rt-header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: linear-gradient(135deg, #D4AF37, #B8960C);
+        color: #0B0F19;
+        padding: 12px 14px;
+        border-bottom: 1px solid rgba(11,15,25,0.1);
+      }
+
+      .rt-title {
+        margin: 0 0 6px;
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+
+      .rt-summary {
+        font-size: 12px;
+        font-weight: 600;
+        opacity: 0.9;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      /* Instructions list - scrollable */
+      .rt-instructions {
+        max-height: 320px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 8px 12px;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      /* Each instruction */
+      .rt-instruction {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #F8FAFC;
+        margin-bottom: 8px;
+        transition: background 0.15s;
+      }
+
+      .rt-instruction:last-child {
+        margin-bottom: 0;
+      }
+
+      .rt-instruction:hover {
+        background: #F1F5F9;
+      }
+
+      /* Final destination instruction */
+      .rt-instruction-final {
+        background: #ECFDF5;
+        border: 1px solid #A7F3D0;
+      }
+
+      .rt-instruction-final:hover {
+        background: #D1FAE5;
+      }
+
+      /* Step number */
+      .rt-step {
+        flex: 0 0 24px;
+        width: 24px;
+        height: 24px;
+        min-width: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #D4AF37;
+        color: #0B0F19;
+        font-size: 11px;
+        font-weight: 800;
+        border-radius: 50%;
+        margin-top: 2px;
+      }
+
+      .rt-instruction-final .rt-step {
+        background: #10B981;
+        color: #FFFFFF;
+      }
+
+      /* Instruction text */
+      .rt-text {
+        flex: 1 1 auto;
+        min-width: 0;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        line-height: 1.5;
+        padding-right: 8px;
+      }
+
+      /* Distance */
+      .rt-dist {
+        flex: 0 0 auto;
+        min-width: 56px;
+        text-align: right;
+        font-size: 11px;
+        font-weight: 700;
+        color: #64748B;
+        white-space: nowrap;
+        padding-top: 2px;
+        margin-left: auto;
+      }
+
+      .rt-instruction-final .rt-dist {
+        color: #059669;
+      }
+
+      /* Dark mode support */
+      @media (prefers-color-scheme: dark) {
+        .rt-container {
+          background: #111827;
+          color: #F1F5F9;
+        }
+        .rt-instruction {
+          background: #1F2937;
+        }
+        .rt-instruction:hover {
+          background: #374151;
+        }
+        .rt-instruction-final {
+          background: #064E3B;
+          border-color: #065F46;
+        }
+        .rt-instruction-final:hover {
+          background: #047857;
+        }
+        .rt-text {
+          color: #E5E7EB;
+        }
+        .rt-dist {
+          color: #9CA3AF;
+        }
+        .rt-instruction-final .rt-dist {
+          color: #34D399;
+        }
+      }
+
+      /* Scrollbar styling */
+      .rt-instructions::-webkit-scrollbar {
+        width: 6px;
+      }
+      .rt-instructions::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .rt-instructions::-webkit-scrollbar-thumb {
+        background: #CBD5E1;
+        border-radius: 3px;
+      }
+      .rt-instructions::-webkit-scrollbar-thumb:hover {
+        background: #94A3B8;
+      }
+      @media (prefers-color-scheme: dark) {
+        .rt-instructions::-webkit-scrollbar-thumb {
+          background: #4B5563;
+        }
+        .rt-instructions::-webkit-scrollbar-thumb:hover {
+          background: #6B7280;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+
+    return () => {
+      const el = document.getElementById(styleId);
+      if (el) el.remove();
+    };
+  }, []);
+
   // ── Rute (uji lokal): gambar rute OSRM dari titik asal ke situs terpilih ──
   // Asal dilacak live via watchPosition — saat pengguna berjalan, posisi asal &
   // rute ikut diperbarui (throttle: geser hanya bila berpindah >35m / min 4 detik).
@@ -764,15 +961,38 @@ export default function Map({
         map.flyToBounds(padded, fitOpts);
       };
 
-      const controlOptions: RouteControlOptions = {
-        waypoints: [origin, L.latLng(routeTarget.lat, routeTarget.lng)],
-        routeWhileDragging: true,
-        showAlternatives: false,
-        fitSelectedRoutes: false,
-        show: true,
-        collapsible: true,
-        draggableWaypoints: false,
-        formatter: new Routing.Formatter({
+      // Custom formatter: returns plain text for formatInstruction (leaflet-routing-machine
+      // inserts via textContent). Custom HTML structure is built in populateInstructions()
+      // after the control is added to the map.
+      const createRouteFormatter = () => {
+        class CustomFormatter extends Routing.Formatter {
+          formatInstruction(instruction: L.Routing.IInstruction) {
+            // Return plain text for accessibility; leaflet-routing-machine uses textContent
+            return super.formatInstruction(instruction);
+          }
+
+          formatSummary(route: L.Routing.IRoute) {
+            const summary = route.summary;
+            if (!summary) return '';
+            const dist = super.formatDistance(summary.totalDistance);
+            const time = super.formatTime(summary.totalTime);
+            return `
+              <div class="rt-header">
+                <h2 class="rt-title">🧭 Petunjuk Rute</h2>
+                <div class="rt-summary">${dist} · ${time}</div>
+              </div>
+              <div class="rt-instructions"></div>
+            `;
+          }
+
+          getContainer(route: L.Routing.IRoute) {
+            const container = document.createElement('div');
+            container.className = 'leaflet-routing-container rt-container';
+            container.innerHTML = this.formatSummary(route);
+            return container;
+          }
+        }
+        return new CustomFormatter({
           language: 'en',
           unitNames: {
             meters: 'm',
@@ -784,10 +1004,52 @@ export default function Map({
             seconds: 'dtk',
           },
           distanceTemplate: '{value} {unit}',
-        }),
-        summaryTemplate:
-          '<h2 class="rt-title">🧭 Petunjuk Rute</h2>' +
-          '<div class="rt-summary">{distance} · {time}</div>',
+        });
+      };
+
+      const routeFormatter = createRouteFormatter();
+
+      // Populate instruction list with custom HTML structure after control renders
+      const populateInstructions = (control: L.Routing.Control, route: L.Routing.IRoute) => {
+        const container = control.getContainer();
+        if (!container) return;
+
+        const instructionsEl = container.querySelector('.rt-instructions');
+        if (!instructionsEl) return;
+
+        // Clear placeholder
+        instructionsEl.innerHTML = '';
+
+        const routeInstructions = route.instructions || [];
+
+        routeInstructions.forEach((instruction: L.Routing.IInstruction, i: number) => {
+          const text = routeFormatter.formatInstruction(instruction);
+          const distance = routeFormatter.formatDistance(instruction.distance);
+          const stepNum = i + 1;
+          const isFinal = text.includes('tiba') || text.includes('Tiba') || text.includes('sampai');
+
+          const el = document.createElement('div');
+          el.className = `rt-instruction ${isFinal ? 'rt-instruction-final' : ''}`;
+          el.dataset.step = String(stepNum);
+          el.innerHTML = `
+            <span class="rt-step">${stepNum}</span>
+            <span class="rt-text">${text}</span>
+            <span class="rt-dist">${distance}</span>
+          `;
+          instructionsEl.appendChild(el);
+        });
+      };
+
+      const controlOptions: RouteControlOptions = {
+        waypoints: [origin, L.latLng(routeTarget.lat, routeTarget.lng)],
+        routeWhileDragging: true,
+        showAlternatives: false,
+        fitSelectedRoutes: false,
+        show: true,
+        collapsible: true,
+        draggableWaypoints: false,
+        formatter: routeFormatter,
+        summaryTemplate: '',
         createMarker: (i: number, wp: L.Routing.Waypoint) => {
           if (i !== 0) {
             // Tujuan memakai marker situs yang sudah ada. Plugin mensyaratkan
@@ -823,6 +1085,18 @@ export default function Map({
         },
       };
       const control = Routing.control(controlOptions).addTo(map);
+
+      // Build custom instruction DOM after control renders (leaflet-routing-machine
+      // inserts formatInstruction as textContent, so we rebuild with proper HTML).
+      // Initial route may not be ready yet; rely on 'routeselected' event primarily.
+      const initialRoute = (control as { _route?: L.Routing.IRoute })._route;
+      if (initialRoute) populateInstructions(control, initialRoute);
+
+      // Also repopulate when route updates (e.g., GPS splice)
+      control.on('routeselected', (e) => {
+        const route = e?.route;
+        if (route) populateInstructions(control, route);
+      });
 
       // Perbarui tooltip titik asal dengan jarak & durasi rute hasil OSRM.
       // Event `routeselected` terpicu ulang saat rute diperbarui (posisi pindah),
