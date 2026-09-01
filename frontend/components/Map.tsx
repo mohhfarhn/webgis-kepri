@@ -2,7 +2,7 @@
 
 // components/Map.tsx — versi SIG dengan radius & batas wilayah
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
@@ -129,6 +129,11 @@ export default function Map({
   const boundaryLabelsRef = useRef<L.Marker[]>([]);
   const lightTileRef = useRef<L.TileLayer | null>(null);
   const satelliteTileRef = useRef<L.TileLayer | null>(null);
+
+  // Follow-on-demand refs: lokasi GPS terbaru & status follow mode
+  const lastFixLocRef = useRef<{ lat: number; lng: number } | null>(null);
+  const isFollowingRef = useRef(false);
+  const [showFollowButton, setShowFollowButton] = useState(false);
 
    // Ref untuk menghindari stale closure pada handler pilihan situs saat peta diklik
   const onSelectSiteRef = useRef(onSelectSite);
@@ -887,6 +892,13 @@ export default function Map({
     // yang sudah dilakukan lewat event routeselected.
     let fitTimer: ReturnType<typeof setTimeout> | null = null;
 
+    let dragListenerAttached = false;
+    // Named handler untuk cleanup yang tepat: map.off('dragstart', handleDragStart)
+    const handleDragStart = () => {
+      isFollowingRef.current = false;
+      setShowFollowButton(true);
+    };
+
     const shortTitle =
       routeTarget.name.length > 20 ? routeTarget.name.slice(0, 20) + '…' : routeTarget.name;
     const formatDist = (m: number) =>
@@ -1114,13 +1126,18 @@ export default function Map({
             )
           );
         }
-        positionRouteView(route);
+        // Hanya lakukan initial fit sekali — setelah itu TIDAK auto-follow.
+        if (!fitBoundsOnce) {
+          positionRouteView(route);
+        }
       });
 
       // Walaupun OSRM gagal merespons, kamera tetap diarahkan ke asal & tujuan
       // (garis rute tak ada, tapi posisi terlihat sesuai permintaan pengguna).
       control.on('routingerror', () => {
-        positionRouteView();
+        if (!fitBoundsOnce) {
+          positionRouteView();
+        }
       });
 
       routeControlRef.current = control;
@@ -1132,6 +1149,12 @@ export default function Map({
       fitTimer = setTimeout(() => {
         if (!disposed) positionRouteView();
       }, 2500);
+
+      // Attach drag listener setelah kontrol rute siap — untuk mendeteksi user pan manual
+      if (!dragListenerAttached && map) {
+        map.on('dragstart', handleDragStart);
+        dragListenerAttached = true;
+      }
     };
 
     // Jarak permukaan (meter) antara dua koordinat — untuk throttling
@@ -1258,6 +1281,7 @@ export default function Map({
             latestHeading = bearingDeg(lastFixLoc, loc);
           }
           lastFixLoc = loc;
+          lastFixLocRef.current = loc;
           maybeNotifyParent(loc);
           // Update marker visual on EVERY GPS fix — no throttle
           originMarker?.setLatLng(L.latLng(loc.lat, loc.lng));
@@ -1315,6 +1339,15 @@ export default function Map({
       disposed = true;
       if (fitTimer != null) clearTimeout(fitTimer);
       if (watchId != null) navigator.geolocation?.clearWatch(watchId);
+      // Cleanup drag listener & follow refs
+      const map = mapRef.current;
+      if (map && dragListenerAttached) {
+        map.off('dragstart', handleDragStart);
+        dragListenerAttached = false;
+      }
+      isFollowingRef.current = false;
+      lastFixLocRef.current = null;
+      setShowFollowButton(false);
     };
   }, [routeTarget]);
 
@@ -1425,6 +1458,51 @@ export default function Map({
 
       {/* Floating Basemap Switcher Control */}
       <BasemapSwitcher theme={theme} onThemeChange={onThemeChange} />
+
+      {/* Follow-on-demand button: muncul saat rute aktif, GPS tersedia, dan user keluar follow mode */}
+      {showFollowButton && routeTarget && lastFixLocRef.current && (
+        <button
+          type="button"
+          onClick={() => {
+            const map = mapRef.current;
+            const loc = lastFixLocRef.current;
+            if (map && loc) {
+              map.flyTo(L.latLng(loc.lat, loc.lng), 17, { duration: 0.5 });
+              isFollowingRef.current = true;
+              setShowFollowButton(false);
+            }
+          }}
+          style={{
+            position: 'absolute',
+            bottom: '90px',
+            right: '12px',
+            zIndex: 1000,
+            padding: '10px 14px',
+            borderRadius: '12px',
+            border: 'none',
+            background: '#0B0F19',
+            color: '#F7E08A',
+            fontSize: '13px',
+            fontWeight: 700,
+            fontFamily: 'inherit',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            opacity: 0.95,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.95'; e.currentTarget.style.transform = 'scale(1)'; }}
+          onTouchStart={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+          onTouchEnd={(e) => { e.currentTarget.style.opacity = '0.95'; e.currentTarget.style.transform = 'scale(1)'; }}
+          aria-label="Kembali ke posisi saya"
+        >
+          <span style={{ fontSize: '15px' }}>📍</span>
+          Kembali ke posisi saya
+        </button>
+      )}
     </div>
   );
 }
