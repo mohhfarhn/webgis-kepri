@@ -1159,12 +1159,15 @@ export default function Map({
 
     // Suntik lokasi ke parent hanya saat posisi berubah (supaya radius SIG sinkron
     // tapi tidak memicu re-render berlebihan).
+    // Variabel terpisah dari route recalculation agar update parent tidak menghalangi routing.
+    let lastParentNotifyLoc: { lat: number; lng: number } | null = null;
+    let lastParentNotifyAt = 0;
     const maybeNotifyParent = (loc: { lat: number; lng: number }) => {
-      const moved = lastSpliceLoc ? distM(loc, lastSpliceLoc) > 35 : true;
+      const moved = lastParentNotifyLoc ? distM(loc, lastParentNotifyLoc) > 10 : true;
       const now = Date.now();
-      if (moved && now - lastSpliceAt >= 4000) {
-        lastSpliceAt = now;
-        lastSpliceLoc = loc;
+      if (moved && now - lastParentNotifyAt >= 3000) {
+        lastParentNotifyAt = now;
+        lastParentNotifyLoc = loc;
         onUserLocFoundRef.current(loc);
       }
     };
@@ -1256,6 +1259,8 @@ export default function Map({
           }
           lastFixLoc = loc;
           maybeNotifyParent(loc);
+          // Update marker visual on EVERY GPS fix — no throttle
+          originMarker?.setLatLng(L.latLng(loc.lat, loc.lng));
           if (!built) {
             // Jika seedOrigin gagal (mis. permission denied), built tetap false.
             // Jangan buat routing dari watchPosition jika fresh GPS gagal.
@@ -1268,14 +1273,12 @@ export default function Map({
             return;
           }
           const now = Date.now();
-          // Geser asal rute bila posisi berpindah cukup jauh ATAU fiks yang lebih
-          // akurat tersedia (accuracy makin kecil) — dengan jeda minimal 4 dtk.
-          // Fiks pertama sering kasar (IP/Wi-Fi); tanpa `betterFix`, asal rute
-          // bisa tertahan di posisi salah padahal GPS sudah mengunci lebih tepat.
-          const moved = lastSpliceLoc ? distM(loc, lastSpliceLoc) > 35 : true;
+          // Route recalculation: 10 meter distance OR better accuracy, min 3 second interval.
+          // Separate from parent notification throttle.
+          const routeMoved = lastSpliceLoc ? distM(loc, lastSpliceLoc) > 10 : true;
           const betterFix = bestAccuracy == null || pos.coords.accuracy < bestAccuracy - 5;
           if (betterFix) bestAccuracy = pos.coords.accuracy;
-          if (now - lastSpliceAt >= 4000 && (moved || betterFix)) {
+          if (now - lastSpliceAt >= 3000 && (routeMoved || betterFix)) {
             lastSpliceAt = now;
             lastSpliceLoc = loc;
             routeControlRef.current?.spliceWaypoints(0, 1, Routing.waypoint(L.latLng(loc.lat, loc.lng)));
