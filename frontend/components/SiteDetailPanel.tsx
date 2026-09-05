@@ -385,8 +385,10 @@ export default function SiteDetailPanel({
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            paddingTop: "10px",
-            paddingBottom: "2px",
+            // Hit-area tak terlihat yang luas (padding) agar mudah digenggam;
+            // batang visual (40x5px) tetap sama.
+            paddingTop: "16px",
+            paddingBottom: "22px",
             cursor: "pointer",
             touchAction: "none",
             flexShrink: 0,

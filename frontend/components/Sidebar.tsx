@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Site, Category, categories, kabupatenList } from '../data/sites';
 import { getThemeColors } from '../lib/theme';
-import CategoryIcon from './icons/CategoryIcon';
+import SiteThumbnail from './SiteThumbnail';
 
 interface SidebarProps {
   sites: Site[];
@@ -542,7 +542,7 @@ export default function Sidebar({
           minHeight: '0',
         }}
       >
-        {sites.length === 0 && (
+        {sites.length === 0 && !dataError && (
           <div style={{ textAlign: 'center', padding: '40px 16px', fontSize: '13px', color: textColorSecondary }}>
             Tidak ada situs yang sesuai filter.
           </div>
@@ -590,19 +590,18 @@ export default function Sidebar({
                 transition: 'all 0.15s ease',
               }}
             >
-              {/* Thumbnail */}
-              <div style={{
-                width: '68px', height: '68px', borderRadius: '10px',
-                backgroundColor: imageUrl 
-                  ? (isLight ? '#E2E8F0' : 'rgba(255, 255, 255, 0.05)') 
-                  : (isLight ? '#F1F5F9' : `${cat.color}15`),
-                backgroundImage: imageUrl ? `url("${imageUrl}")` : undefined,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '26px',
-                flexShrink: 0,
-                border: `1px solid ${isLight ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.08)'}`,
-              }}>{!imageUrl && <CategoryIcon category={site.kat} size={28} color={cat.color} />}</div>
+              {/* Thumbnail: SiteThumbnail menangani src kosong/invalid/gagal dimuat dengan
+                placeholder netral ("Foto tidak tersedia") — tidak ada broken image,
+                layout kartu tetap rapi. Ukuran tetap 68×68 (rasio konsisten). */}
+              <SiteThumbnail
+                src={imageUrl}
+                style={{
+                  width: '68px', height: '68px', borderRadius: '10px',
+                  backgroundColor: isLight ? '#F1F5F9' : 'rgba(255, 255, 255, 0.06)',
+                  flexShrink: 0,
+                  border: `1px solid ${isLight ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.08)'}`,
+                }}
+              />
 
               {/* Info */}
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>

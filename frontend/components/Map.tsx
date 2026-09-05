@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import { LocateFixed } from 'lucide-react';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import 'leaflet.markercluster';
@@ -50,8 +51,18 @@ interface MapProps {
   onArrive?: () => void;
   // Rute (uji lokal): tujuan saat tombol "Rute" ditekan; null untuk menghapus rute
   routeTarget?: { lat: number; lng: number; name: string } | null;
-  // Callback ketika geolocation untuk routing gagal
-  onRouteLocationError?: (error: { code: number; message: string; retryable: boolean }) => void;
+  // Callback ketika geolocation untuk routing gagal — dipakai juga untuk error
+  // permintaan rute (OSRM mati / network). `detail` = baris penjelasan tambahan
+  // yang boleh ditampilkan UI di bawah `message`.
+  onRouteLocationError?: (error: {
+    code: number;
+    message: string;
+    retryable: boolean;
+    detail?: string;
+  }) => void;
+  // Callback dengan ringkasan rute (jarak total & durasi) saat rute selesai dihitung.
+  // Dipakai UI mobile untuk kartu ringkasan bawah. undefined = belum ada ringkasan.
+  onRouteSummary?: (summary: { distance: number; duration: number } | null) => void;
 }
 
 // Step mentah OSRM v5 yang diteruskan plugin ke stepToText (belum diproses
@@ -118,6 +129,7 @@ export default function Map({
   onArrive,
   routeTarget = null,
   onRouteLocationError,
+  onRouteSummary,
 }: MapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const routeControlRef = useRef<L.Routing.Control | null>(null);
@@ -132,7 +144,8 @@ export default function Map({
 
   // Follow-on-demand refs: lokasi GPS terbaru & status follow mode
   const lastFixLocRef = useRef<{ lat: number; lng: number } | null>(null);
-  const isFollowingRef = useRef(false);
+  const isFollowingRef = useRef(true); // Mulai dengan follow aktif
+  const recenterThrottleRef = useRef<number | null>(null);
   const [showFollowButton, setShowFollowButton] = useState(false);
 
    // Ref untuk menghindari stale closure pada handler pilihan situs saat peta diklik
@@ -159,6 +172,12 @@ export default function Map({
   useEffect(() => {
     onRouteLocationErrorRef.current = onRouteLocationError;
   }, [onRouteLocationError]);
+
+  // Ref untuk onRouteSummary — dipanggil dari event Leaflet (bukan React state)
+  const onRouteSummaryRef = useRef(onRouteSummary);
+  useEffect(() => {
+    onRouteSummaryRef.current = onRouteSummary;
+  }, [onRouteSummary]);
 
   // Ref userLoc terbaru untuk seed awal rute tanpa mendaftarkan userLoc sebagai
   // dependensi efek (menghindari loop rebuild saat posisi live terus berubah)
@@ -834,6 +853,373 @@ export default function Map({
           background: #6B7280;
         }
       }
+
+      /* ── Mobile (≤640px): compact navigation-mode routing card ──
+         Bukan bottom-sheet penuh — kartu instruksi ramping di atas peta agar
+         peta tetap dominan. Ringkasan jarak/waktu ditampilkan di kartu bawah
+         (HomeClient), sehingga header instruksi cukup satu baris. */
+      @media (max-width: 640px) {
+        .leaflet-routing-container.rt-container {
+          position: fixed !important;
+          top: calc(110px + env(safe-area-inset-top, 0px)) !important;
+          left: 12px !important;
+          right: 12px !important;
+          bottom: auto !important;
+          max-height: 168px !important;
+          overflow: hidden !important;
+          border-radius: 16px !important;
+          box-shadow: 0 4px 24px rgba(0,0,0,0.18) !important;
+          z-index: 1000 !important;
+          display: block !important;
+          pointer-events: auto !important;
+          touch-action: pan-y !important;
+        }
+
+        .leaflet-routing-container.rt-container .rt-header {
+          position: static !important;
+          padding: 0 !important;
+          background: transparent !important;
+          border: none !important;
+          display: none !important;
+        }
+
+        .leaflet-routing-container.rt-container .rt-instructions {
+          max-height: 160px !important;
+          padding: 7px 44px 7px 12px !important;
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
+          -webkit-overflow-scrolling: touch !important;
+          overscroll-behavior: contain !important;
+          touch-action: pan-y !important;
+        }
+
+        /* ═══ Mode Navigasi Mobile: CURRENT + NEXT (compact nav card) ═══ */
+
+        /* Kontainer panel — gaya kartu, latar gelap transparan agar
+           background gelap rt-container (globals) tampil konsisten.
+           Gaya dibatasi MOBILE (di dalam @media max-640). */
+        .leaflet-routing-container.rt-container,
+        .rt-container {
+          border-radius: 14px !important;
+          overflow: hidden !important;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.05) inset !important;
+        }
+        .leaflet-routing-container.rt-container .rt-instructions,
+        .rt-instructions {
+          background: transparent !important;
+          overflow-wrap: anywhere !important;
+        }
+
+        /* CURRENT step — dua kolom: ikon di kiri, teks di kanan. Dominan. */
+        .leaflet-routing-container.rt-container .rt-nav-current,
+        .rt-nav-current {
+          display: flex !important;
+          align-items: flex-start !important;
+          gap: 10px !important;
+          padding: 1px 0 8px !important;
+        }
+        .leaflet-routing-container.rt-container .rt-nav-icon,
+        .rt-nav-icon {
+          flex: 0 0 40px !important;
+          width: 40px !important;
+          height: 40px !important;
+          min-width: 40px !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          border-radius: 50% !important;
+          background: linear-gradient(135deg, #E5C158, #B8960C) !important;
+          color: #0B0F19 !important;
+          font-size: 23px !important;
+          font-weight: 800 !important;
+          line-height: 1 !important;
+          box-shadow: 0 4px 14px rgba(212, 175, 55, 0.4) !important;
+        }
+        .leaflet-routing-container.rt-container .rt-nav-body,
+        .rt-nav-body {
+          flex: 1 1 auto !important;
+          min-width: 0 !important;
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 0px !important;
+          padding-top: 0px !important;
+        }
+        .leaflet-routing-container.rt-container .rt-nav-title,
+        .rt-nav-title {
+          font-size: 16px !important;
+          font-weight: 700 !important;
+          line-height: 1.25 !important;
+          color: #F1F5F9 !important;
+          letter-spacing: -0.01em !important;
+          overflow-wrap: anywhere !important;
+        }
+        .leaflet-routing-container.rt-container .rt-nav-road,
+        .rt-nav-road {
+          font-size: 12.5px !important;
+          font-weight: 600 !important;
+          color: #AAB6C6 !important;
+          line-height: 1.2 !important;
+          overflow-wrap: anywhere !important;
+        }
+        .leaflet-routing-container.rt-container .rt-nav-dist,
+        .rt-nav-dist {
+          font-size: 13.5px !important;
+          font-weight: 700 !important;
+          color: #E5C158 !important;
+          margin-top: 2px !important;
+          line-height: 1.15 !important;
+        }
+
+        /* Final / tiba */
+        .leaflet-routing-container.rt-container .rt-nav-final,
+        .rt-nav-final {
+          display: flex !important;
+          align-items: center !important;
+          gap: 12px !important;
+          padding: 6px 0 !important;
+        }
+        .leaflet-routing-container.rt-container .rt-nav-final .rt-nav-icon,
+        .rt-nav-final .rt-nav-icon {
+          background: linear-gradient(135deg, #34D399, #059669) !important;
+          box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4) !important;
+        }
+        .leaflet-routing-container.rt-container .rt-nav-final .rt-nav-title,
+        .rt-nav-final .rt-nav-title {
+          color: #34D399 !important;
+        }
+
+        /* NEXT step — subordinate, dipisah pembatas */
+        .leaflet-routing-container.rt-container .rt-nav-next,
+        .rt-nav-next {
+          margin-top: 0px !important;
+          padding-top: 7px !important;
+          border-top: 1px solid rgba(255,255,255,0.12) !important;
+        }
+        .leaflet-routing-container.rt-container .rt-nav-next-label,
+        .rt-nav-next-label {
+          display: block !important;
+          font-size: 10px !important;
+          font-weight: 700 !important;
+          text-transform: uppercase !important;
+          letter-spacing: .08em !important;
+          color: #8A9AAE !important;
+          margin-bottom: 4px !important;
+        }
+        .leaflet-routing-container.rt-container .rt-nav-next-row,
+        .rt-nav-next-row {
+          display: flex !important;
+          align-items: flex-start !important;
+          gap: 6px !important;
+          min-width: 0 !important;
+        }
+        .leaflet-routing-container.rt-container .rt-nav-next-icon,
+        .rt-nav-next-icon {
+          flex: 0 0 24px !important;
+          width: 24px !important;
+          height: 24px !important;
+          min-width: 24px !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          border-radius: 8px !important;
+          background: rgba(212, 175, 55, 0.15) !important;
+          color: #E5C158 !important;
+          font-size: 13px !important;
+          font-weight: 700 !important;
+          margin-top: 1px !important;
+        }
+        .leaflet-routing-container.rt-container .rt-nav-next-text,
+        .rt-nav-next-text {
+          flex: 1 1 auto !important;
+          min-width: 0 !important;
+          font-size: 13px !important;
+          font-weight: 600 !important;
+          color: #CBD5E1 !important;
+          line-height: 1.25 !important;
+          overflow-wrap: anywhere !important;
+        }
+        .leaflet-routing-container.rt-container .rt-nav-next-dist,
+        .rt-nav-next-dist {
+          flex-shrink: 0 !important;
+          font-size: 12px !important;
+          font-weight: 700 !important;
+          color: #E5C158 !important;
+          line-height: 1.2 !important;
+          white-space: nowrap !important;
+        }
+
+        /* Transisi halus antar step (150-250ms) */
+        .leaflet-routing-container.rt-container .rt-nav,
+        .rt-nav {
+          animation: rt-nav-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) both !important;
+        }
+        @keyframes rt-nav-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Close button in header (nonaktifkan — dikelola via kartu bawah) */
+        .leaflet-routing-container.rt-container .leaflet-routing-close {
+          display: none !important;
+        }
+
+        /* Close (X) — tombol bulat emas, jelas terlihat, mudah ditekan.
+           Perilaku toggle panel TIDAK diubah (hanya tampilan). Dibatasi ke
+           keadaan EXPANDED (:not(.leaflet-routing-container-hide)) agar
+           pill ter-collapse (penanda peta) dari globals tetap utuh. Kolom kanan
+           rt-instructions sudah diberi ruang (padding-right) agar X tidak
+           menimpa teks instruksi. */
+        .leaflet-routing-container.rt-container:not(.leaflet-routing-container-hide)
+          .leaflet-routing-collapse-btn {
+          position: absolute !important;
+          top: 6px !important;
+          right: 8px !important;
+          z-index: 20 !important;
+          width: 32px !important;
+          height: 32px !important;
+          min-width: 32px !important;
+          min-height: 32px !important;
+          border-radius: 50% !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          background: linear-gradient(135deg, #E5C158, #B8960C) !important;
+          color: #0B0F19 !important;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(11, 15, 25, 0.12) inset !important;
+          font-size: 0 !important;
+          line-height: 1 !important;
+          cursor: pointer !important;
+          touch-action: manipulation !important;
+        }
+        .leaflet-routing-container.rt-container:not(.leaflet-routing-container-hide)
+          .leaflet-routing-collapse-btn::after {
+          content: '✕' !important;
+          font-size: 14px !important;
+          font-weight: 800 !important;
+          line-height: 1 !important;
+        }
+
+        /* Sembunyikan tooltip "Posisi Anda" di tengah peta pada mobile —
+           info jarak/durasi pindah ke kartu ringkasan bawah. */
+        .route-tooltip {
+          display: none !important;
+        }
+
+        /* Follow button: kompak, di atas kartu ringkasan bawah */
+        .follow-btn-mobile {
+          position: fixed !important;
+          bottom: calc(96px + env(safe-area-inset-bottom)) !important;
+          right: 12px !important;
+          z-index: 1100 !important;
+          width: 44px !important;
+          height: 44px !important;
+          border-radius: 50% !important;
+          padding: 0 !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.3) !important;
+        }
+
+        @media (min-width: 431px) and (max-width: 640px) {
+          .follow-btn-mobile {
+            width: auto !important;
+            height: auto !important;
+            border-radius: 12px !important;
+            padding: 8px 12px !important;
+            bottom: calc(96px + env(safe-area-inset-bottom)) !important;
+          }
+          .follow-btn-mobile .btn-text {
+            display: inline !important;
+          }
+        }
+
+        @media (max-width: 430px) {
+          .follow-btn-mobile .btn-text {
+            display: none !important;
+          }
+        }
+
+        /* Ensure Leaflet controls (zoom, attribution) stay visible */
+        .leaflet-control-container {
+          z-index: 900 !important;
+        }
+        .leaflet-control-zoom {
+          z-index: 901 !important;
+        }
+        .leaflet-control-attribution {
+          z-index: 900 !important;
+        }
+
+        /* Zoom (+/−) saat mode navigasi aktif: kartu rute menutupi pojok
+           kiri-atas default selama rute aktif, jadi pindahkan zoom ke sisi
+           kanan bawah — di atas kartu ringkasan rute (bottom) dan tombol
+           "Kembali ke posisi saya" (bottom:90px). Scoped hanya saat panel
+           rute ada (rt-container), mobile-only, dan tidak mengubah perilaku
+           zoom (hanya posisi/stacking). */
+        .leaflet-control-container:has(.leaflet-routing-container.rt-container) .leaflet-control-zoom {
+          position: fixed !important;
+          top: auto !important;
+          left: auto !important;
+          right: 12px !important;
+          bottom: calc(152px + env(safe-area-inset-bottom, 0px)) !important;
+          z-index: 1001 !important;
+        }
+
+        /* Zoom saat Bottom Sheet TERBUKA: sheet (75dvh) menutupi kanan-bawah
+           default, jadi angkat zoom ke atas wilayah sheet — fully visible &
+           clickable. aside hanya dirender saat isMobile && !routeTarget, jadi
+           selector ini otomatis mobile-only dan TIDAK pernah aktif saat
+           moding rute (sheet di-unmount). Posisi routing di atas tetap sakti. */
+        #main-content:has(aside[data-sheet-open]) .leaflet-control-zoom {
+          position: fixed !important;
+          top: auto !important;
+          left: auto !important;
+          right: 12px !important;
+          bottom: calc(var(--sheet-height) + 18px + env(safe-area-inset-bottom, 0px)) !important;
+          z-index: 1001 !important;
+        }
+
+        /* Selected site popup/label should not overlap routing panel */
+        .site-label-tooltip {
+          z-index: 800 !important;
+        }
+        .leaflet-popup {
+          z-index: 850 !important;
+        }
+
+        /* Dark-mode tweaks spesifik mobile dalam satu media block */
+        @media (prefers-color-scheme: dark) {
+          .leaflet-routing-container.rt-container .rt-nav-title {
+            color: #F1F5F9 !important;
+          }
+          .leaflet-routing-container.rt-container .rt-nav-road {
+            color: #AAB6C6 !important;
+          }
+          .leaflet-routing-container.rt-container .rt-nav-dist {
+            color: #E5C158 !important;
+          }
+          .leaflet-routing-container.rt-container .rt-nav-next {
+            border-top-color: rgba(255,255,255,0.12) !important;
+          }
+          .leaflet-routing-container.rt-container .rt-nav-next-label {
+            color: #8A9AAE !important;
+          }
+          .leaflet-routing-container.rt-container .rt-nav-next-icon {
+            background: rgba(212, 175, 55, 0.18) !important;
+            color: #E5C158 !important;
+          }
+          .leaflet-routing-container.rt-container .rt-nav-next-text {
+            color: #B9C6D8 !important;
+          }
+          .leaflet-routing-container.rt-container .rt-nav-next-dist {
+            color: #E5C158 !important;
+          }
+          .leaflet-routing-container.rt-container .rt-nav-final .rt-nav-title {
+            color: #34D399 !important;
+          }
+        }
+      }
     `;
     document.head.appendChild(style);
 
@@ -859,6 +1245,10 @@ export default function Map({
 
     const Routing = L.Routing;
     if (!routeTarget || !Routing) return;
+
+    // Routing baru dimulai → aktifkan follow mode
+    isFollowingRef.current = true;
+    setShowFollowButton(false);
 
     // Marker wajah baru: titik asal emas berdenyut (tujuan memakai marker situs
     // yang sudah ada — tidak perlu pin/tooltip duplikat)
@@ -886,6 +1276,10 @@ export default function Map({
     // Fit sudut pandang HANYA sekali saat rute pertama terbentuk — agar peta
     // segera menampilkan posisi asal & rute, tanpa loncat-loncat saat GPS bergerak.
     let fitBoundsOnce = false;
+    // True setelah rute pertama berhasil terpilih (routeselected). Dipakai untuk
+    // membedakan kegagalan FATAL (belum pernah ada rute) dari kegagalan transien
+    // saat pelacakan GPS berlangsung — hanya kegagalan fatal yang dilaporkan ke UI.
+    let routeEverHadRoute = false;
     // Timer pengaman: pastikan kamera tetap bergeser ke posisi GPS & tujuan walau
     // server OSRM lambat/gantung (respons bisa tidak datang sama sekali). Dipicu
     // lewat fitBoundsOnce, jadi hanya berjalan sekali dan tidak mengganggu fit
@@ -1021,39 +1415,188 @@ export default function Map({
 
       const routeFormatter = createRouteFormatter();
 
-      // Populate instruction list with custom HTML structure after control renders
+      // Populate instruction list with custom HTML structure after control renders.
+      // Data `route.instructions` tidak pernah dimodifikasi — hanya presentasinya.
+      //
+      // MOBILE: tampilkan CURRENT + NEXT (hierarki navigasi).
+      //   • Current step = instruksi[0]. Pola ini OTOMATIS maju: origin rute selalu
+      //     mengikuti posisi GPS live (spliceWaypoints waypoint 0), jadi setelah
+      //     user melewati manuver, rute di-recalculate dan instruksi[0] menjadi
+      //     manuver berikutnya dari posisi user. Tidak ada tracker progres kedua.
+      //   • Next step = instruksi[1] (tampil ringkas, disembunyikan bila tak ada).
+      // DESKTOP: daftar lengkap semua langkah (tetap scrollable).
+      const mobile = typeof window !== 'undefined' && window.innerWidth <= 640;
+
+      // Peta tipe manuver → ikon arah. Memakai field `type`/`direction` OSRM
+      // yang sudah ada (bukan sistem ikon baru). Fallback ↪ untuk yang tak dikenal.
+      const maneuverIcon = (ins: L.Routing.IInstruction): string => {
+        switch (ins.type as string) {
+          case 'Right': return '↱';
+          case 'SlightRight': return '↗';
+          case 'SharpRight': return '⇗';
+          case 'Left': return '↰';
+          case 'SlightLeft': return '↖';
+          case 'SharpLeft': return '⇖';
+          case 'TurnAround': return '↶';
+          case 'Head': return '↑';
+          case 'Continue': return '↑';
+          case 'Straight': return '↑';
+          case 'Roundabout': return '↻';
+          case 'StartAt': return '🚶';
+          case 'WaypointReached': return '◉';
+          case 'DestinationReached': return '🏁';
+          default: return '↪';
+        }
+      };
+
+      // Hanya-penampilan (presentation-only): judul manuver dalam Bahasa
+      // Indonesia yang natural. Instruksi "lanjut lurus" berbasis arah mata
+      // angin (Head/Continue/Straight — mis. "Arah barat laut di Jalan …")
+      // diubah menjadi "Lurus". Nama jalan tetap tampil terpisah melalui
+      // `instruction.road`. Pemetaan memakai `instruction.type` (bukan
+      // pencarian string yang rapuh). Data OSRM tidak diubah.
+      const DISPLAY_TITLE: Record<string, string> = {
+        Head: 'Lurus',
+        Continue: 'Lurus',
+        Straight: 'Lurus',
+        Left: 'Belok kiri',
+        SharpLeft: 'Belok kiri',
+        SlightLeft: 'Belok kiri',
+        Right: 'Belok kanan',
+        SharpRight: 'Belok kanan',
+        SlightRight: 'Belok kanan',
+        TurnAround: 'Putar balik',
+        UTurn: 'Putar balik',
+        Roundabout: 'Masuk bundaran',
+        Merge: 'Gabung',
+        Fork: 'Bercabang',
+        OnRamp: 'Masuk jalan layang',
+        OffRamp: 'Keluar jalan layang',
+        EndOfRoad: 'Ujung jalan',
+        WaypointReached: 'Titik perantara',
+        DestinationReached: 'Anda telah tiba',
+        StartAt: 'Mulai',
+      };
+
+      const displayInstructionText = (ins: L.Routing.IInstruction): string => {
+        const t = ins?.type;
+        if (t && DISPLAY_TITLE[t]) return DISPLAY_TITLE[t];
+        return routeFormatter.formatInstruction(ins);
+      };
+
+      const buildCurrentHtml = (ins: L.Routing.IInstruction) => {
+        const text = displayInstructionText(ins);
+        const dist = routeFormatter.formatDistance(ins.distance);
+        const icon = maneuverIcon(ins);
+        const isFinal =
+          ins.type === 'DestinationReached' ||
+          text.includes('tiba') || text.includes('Tiba') || text.includes('sampai');
+        const road = (ins as unknown as { road?: string }).road || '';
+
+        if (isFinal) {
+          return `
+            <div class="rt-nav rt-nav-final">
+              <div class="rt-nav-icon">🏁</div>
+              <div class="rt-nav-body">
+                <div class="rt-nav-title">Anda telah tiba</div>
+                ${road ? `<div class="rt-nav-road">${road}</div>` : ''}
+                <div class="rt-nav-dist">${dist}</div>
+              </div>
+            </div>
+          `;
+        }
+        return `
+          <div class="rt-nav rt-nav-current">
+            <div class="rt-nav-icon">${icon}</div>
+            <div class="rt-nav-body">
+              <div class="rt-nav-title">${text}</div>
+              ${road ? `<div class="rt-nav-road">${road}</div>` : ''}
+              <div class="rt-nav-dist">${dist}</div>
+            </div>
+          </div>
+        `;
+      };
+
+      const buildNextHtml = (ins: L.Routing.IInstruction) => {
+        const text = displayInstructionText(ins);
+        const dist = routeFormatter.formatDistance(ins.distance);
+        const icon = maneuverIcon(ins);
+        const road = (ins as unknown as { road?: string }).road || '';
+        return `
+          <div class="rt-nav rt-nav-next">
+            <span class="rt-nav-next-label">Berikutnya</span>
+            <div class="rt-nav-next-row">
+              <span class="rt-nav-next-icon">${icon}</span>
+              <span class="rt-nav-next-text">${text}${road ? ` · ${road}` : ''}</span>
+              <span class="rt-nav-next-dist">${dist}</span>
+            </div>
+          </div>
+        `;
+      };
+
       const populateInstructions = (control: L.Routing.Control, route: L.Routing.IRoute) => {
         const container = control.getContainer();
         if (!container) return;
 
-        const instructionsEl = container.querySelector('.rt-instructions');
-        if (!instructionsEl) return;
+        const routeInstructions = route.instructions || [];
+
+        // Desktop: pertahankan daftar bernomor lengkap bawaan plugin
+        // (`.leaflet-routing-alt`) — jangan sentuh, jangan buat UI ganda.
+        if (!mobile) return;
+
+        // ★ Root fix (mobile saja): leaflet-routing-machine TIDAK pernah
+        // memanggil formatter.getContainer()/formatSummary() — plugin memakai
+        // ItineraryBuilder.createContainer() + summaryTemplate ('') untuk
+        // membuat kontainer instruksi. Jadi `.rt-instructions` TIDAK otomatis
+        // ada di DOM. Kita buat sendiri di dalam kontainer rute yang nyata,
+        // lalu sembunyikan `.leaflet-routing-alt` bawaan plugin (daftar
+        // bernomor lengkap) agar hanya Current+Next yang terlihat.
+        let instructionsEl = container.querySelector<HTMLElement>('.rt-instructions');
+        if (!instructionsEl) {
+          instructionsEl = document.createElement('div');
+          instructionsEl.className = 'rt-instructions';
+          container.appendChild(instructionsEl);
+        }
+
+        // Sembunyikan daftar bernomor bawaan plugin pada mobile.
+        container.querySelectorAll<HTMLElement>('.leaflet-routing-alt').forEach((alt) => {
+          alt.style.display = 'none';
+        });
 
         // Clear placeholder
         instructionsEl.innerHTML = '';
 
-        const routeInstructions = route.instructions || [];
-
-        routeInstructions.forEach((instruction: L.Routing.IInstruction, i: number) => {
-          const text = routeFormatter.formatInstruction(instruction);
-          const distance = routeFormatter.formatDistance(instruction.distance);
-          const stepNum = i + 1;
-          const isFinal = text.includes('tiba') || text.includes('Tiba') || text.includes('sampai');
-
-          const el = document.createElement('div');
-          el.className = `rt-instruction ${isFinal ? 'rt-instruction-final' : ''}`;
-          el.dataset.step = String(stepNum);
-          el.innerHTML = `
-            <span class="rt-step">${stepNum}</span>
-            <span class="rt-text">${text}</span>
-            <span class="rt-dist">${distance}</span>
+        if (routeInstructions.length === 0) {
+          instructionsEl.innerHTML = `
+            <div class="rt-nav rt-nav-current">
+              <div class="rt-nav-icon">↪</div>
+              <div class="rt-nav-body">
+                <div class="rt-nav-title">Menghitung rute…</div>
+              </div>
+            </div>
           `;
-          instructionsEl.appendChild(el);
-        });
+          return;
+        }
+
+        const active = routeInstructions[0];
+        let html = buildCurrentHtml(active);
+        const next = routeInstructions[1];
+        if (next) {
+          html += buildNextHtml(next);
+        }
+        instructionsEl.innerHTML = html;
       };
 
       const controlOptions: RouteControlOptions = {
         waypoints: [origin, L.latLng(routeTarget.lat, routeTarget.lng)],
+        // Pakai mekanisme resmi plugin (containerClassName) agar kelas
+        // `rt-container` SELALU ada pada elemen `.leaflet-routing-container`
+        // yang nyata di DOM. Tanpa ini, seluruh selector CSS yang diawali
+        // `.leaflet-routing-container.rt-container` (kartu, Current+Next,
+        // tombol X, dan :has() zoom) tidak akan cocok di runtime.
+        // (CustomFormatter.getContainer() yang memakai className ini TIDAK
+        // pernah dipanggil plugin — kontainer dibangun via ItineraryBuilder.)
+        containerClassName: 'rt-container',
         routeWhileDragging: true,
         showAlternatives: false,
         fitSelectedRoutes: false,
@@ -1117,6 +1660,10 @@ export default function Map({
         const route = e?.route;
         const dist = route?.summary?.totalDistance;
         const dur = route?.summary?.totalTime;
+        // Kirim ringkasan rute ke UI luar (kartu ringkasan bawah mobile)
+        if (dist != null && dur != null) {
+          onRouteSummaryRef.current?.({ distance: dist, duration: dur });
+        }
         if (dist != null && originMarker) {
           originMarker.setTooltipContent(
             originTooltipHtml(
@@ -1130,6 +1677,8 @@ export default function Map({
         if (!fitBoundsOnce) {
           positionRouteView(route);
         }
+        // Rute nyata pernah terpilih → kegagalan OSRM berikutnya bukan fatal.
+        routeEverHadRoute = true;
       });
 
       // Walaupun OSRM gagal merespons, kamera tetap diarahkan ke asal & tujuan
@@ -1137,6 +1686,19 @@ export default function Map({
       control.on('routingerror', () => {
         if (!fitBoundsOnce) {
           positionRouteView();
+        }
+        // Jika rute TIDAK PERNAH berhasil terbentuk (OSRM mati / gagal hitung),
+        // kategorikan sebagai kegagalan FATAL yang harus tampil di UI:
+        // tidak ada point-of-no-return; permintaan rute berikutnya (Coba Lagi)
+        // akan membangun kontrol rute baru. Kegagalan transien saat rute sudah
+        // hidup (recalc GPS) dibiarkan — behavior lama, rute tetap berjalan.
+        if (!routeEverHadRoute) {
+          onRouteLocationErrorRef.current?.({
+            code: 0,
+            message: 'Gagal mendapatkan rute',
+            detail: 'Server rute tidak dapat dihubungi. Silakan coba lagi.',
+            retryable: true,
+          });
         }
       });
 
@@ -1311,6 +1873,36 @@ export default function Map({
           // tempat) — dan dipanggil ulang setelah splice karena plugin bisa
           // membuat ulang elemen marker waypoint.
           setHeading(latestHeading);
+
+          // ── Follow-on-demand: auto-recenter jika GPS keluar viewport ──
+          // Hanya aktif jika follow mode aktif DAN rute sudah built.
+          if (isFollowingRef.current && built) {
+            const map = mapRef.current;
+            if (map && map.getSize().x > 0) {
+              // Cek apakah GPS berada di dalam bounds dengan margin 20%
+              // (anggap "keluar" jika sudah di 20% area terluar viewport)
+              const bounds = map.getBounds();
+              const latLng = L.latLng(loc.lat, loc.lng);
+              // Leaflet getBounds() tidak memiliki padding built-in, hitung manual
+              // dengan memperluas bounds ke dalam sebesar 20% dari width/height
+              const padFactor = 0.2; // 20% margin dari tepi
+              const paddedBounds = bounds.pad(-padFactor); // negatif = ke dalam
+              const isInside = paddedBounds.contains(latLng);
+              if (!isInside) {
+                // GPS sudah di luar area 80% tengah → jadwalkan recenter
+                // Throttle: minimal 3 detik antar recenter untuk hindari flyTo berulang
+                if (recenterThrottleRef.current === null) {
+                  recenterThrottleRef.current = window.setTimeout(() => {
+                    const m = mapRef.current;
+                    if (m && isFollowingRef.current && !disposed) {
+                      m.flyTo(latLng, 17, { duration: 0.5 });
+                    }
+                    recenterThrottleRef.current = null;
+                  }, 3000);
+                }
+              }
+            }
+          }
         },
         (err) => {
           const geolocationErr = err as GeolocationPositionError;
@@ -1338,6 +1930,7 @@ export default function Map({
     return () => {
       disposed = true;
       if (fitTimer != null) clearTimeout(fitTimer);
+      if (recenterThrottleRef.current != null) clearTimeout(recenterThrottleRef.current);
       if (watchId != null) navigator.geolocation?.clearWatch(watchId);
       // Cleanup drag listener & follow refs
       const map = mapRef.current;
@@ -1463,6 +2056,7 @@ export default function Map({
       {showFollowButton && routeTarget && lastFixLocRef.current && (
         <button
           type="button"
+          className="follow-btn-mobile"
           onClick={() => {
             const map = mapRef.current;
             const loc = lastFixLocRef.current;
@@ -1474,7 +2068,7 @@ export default function Map({
           }}
           style={{
             position: 'absolute',
-            bottom: '90px',
+            bottom: '96px',
             right: '12px',
             zIndex: 1000,
             padding: '10px 14px',
@@ -1499,8 +2093,8 @@ export default function Map({
           onTouchEnd={(e) => { e.currentTarget.style.opacity = '0.95'; e.currentTarget.style.transform = 'scale(1)'; }}
           aria-label="Kembali ke posisi saya"
         >
-          <span style={{ fontSize: '15px' }}>📍</span>
-          Kembali ke posisi saya
+          <LocateFixed style={{ width: '18px', height: '18px', flexShrink: 0 }} />
+          <span className="btn-text">Kembali ke posisi saya</span>
         </button>
       )}
     </div>
